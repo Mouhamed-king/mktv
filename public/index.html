@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MKTV Web</title>
+  <meta name="theme-color" content="#071a2f" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/supabase-config.js"></script>
+</head>
+<body>
+  <section id="authView" class="auth-view">
+    <div class="auth-card">
+      <h1>MKTV</h1>
+      <p class="muted">Connecte-toi pour acceder a tes chaines, favoris et historique.</p>
+
+      <div class="auth-tabs">
+        <button id="showLoginBtn" class="auth-tab active" type="button">Connexion</button>
+        <button id="showSignupBtn" class="auth-tab" type="button">Inscription</button>
+      </div>
+
+      <form id="loginForm" class="auth-form">
+        <label>Email</label>
+        <input id="loginEmail" type="email" autocomplete="email" required />
+        <label>Mot de passe</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" required />
+        <button type="submit" class="action-btn">Se connecter</button>
+      </form>
+
+      <form id="signupForm" class="auth-form hidden">
+        <label>Email</label>
+        <input id="signupEmail" type="email" autocomplete="email" required />
+        <label>Mot de passe</label>
+        <input id="signupPassword" type="password" autocomplete="new-password" required minlength="6" />
+        <button type="submit" class="action-btn">Creer un compte</button>
+      </form>
+
+      <p id="authStatus" class="muted small"></p>
+    </div>
+  </section>
+
+  <div id="appView" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand-row">
+        <h1>MKTV</h1>
+      </div>
+
+      <div class="profile-card">
+        <div class="avatar">M</div>
+        <div class="profile-meta">
+          <p id="userEmail" class="email">mktv@local</p>
+          <p class="trial">Compte actif</p>
+        </div>
+      </div>
+
+      <div class="main-tabs">
+        <button class="main-tab active" data-tab="live" type="button">Live</button>
+        <button class="main-tab" data-tab="favorites" type="button">Favoris</button>
+        <button class="main-tab" data-tab="recent" type="button">Recent</button>
+        <button class="main-tab" data-tab="settings" type="button">Parametres</button>
+      </div>
+
+      <div id="groupsBlock">
+        <div class="sidebar-head">
+          <span>Categories</span>
+        </div>
+        <nav id="groupNav" class="group-nav">
+          <button class="group-item active" type="button" data-group="">
+            <span>Toutes</span>
+            <span class="count">0</span>
+          </button>
+        </nav>
+      </div>
+
+      <label class="sr-only" for="groupSelect">Categorie</label>
+      <select id="groupSelect" class="sr-only" aria-hidden="true" tabindex="-1">
+        <option value="">Toutes</option>
+      </select>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="title-wrap">
+          <h2 id="pageTitle">Live</h2>
+          <p class="muted small" id="listMeta">Chargement...</p>
+        </div>
+        <div class="topbar-right">
+          <label class="search-wrap" for="searchInput">
+            <span class="sr-only">Recherche</span>
+            <input id="searchInput" type="search" placeholder="Rechercher une chaine..." />
+          </label>
+          <button id="installAppBtn" class="install-btn hidden" type="button" title="Installer l'application">
+            Télécharger l'app
+          </button>
+        </div>
+      </header>
+
+      <section id="liveSection" class="section-panel">
+        <div class="player-shell">
+          <div class="player-head">
+            <h3 id="currentTitle">Selectionnez une chaine</h3>
+            <p id="playerStatus" class="muted small"></p>
+          </div>
+          <video id="player" controls autoplay playsinline></video>
+        </div>
+
+        <div class="channels-shell">
+          <div id="channelsList" class="channels-grid"></div>
+          <button id="loadMoreBtn" class="load-btn" type="button">Charger plus</button>
+        </div>
+      </section>
+
+      <section id="favoritesSection" class="section-panel hidden">
+        <div id="favoritesList" class="channels-grid"></div>
+      </section>
+
+      <section id="recentSection" class="section-panel hidden">
+        <div id="recentList" class="channels-grid"></div>
+      </section>
+
+      <section id="settingsSection" class="section-panel hidden">
+        <div class="settings-card">
+          <h3>Parametres</h3>
+          <p class="muted">Etat Supabase: <strong id="supabaseStatus">Non configure</strong></p>
+          <p class="muted">Utilisateur: <strong id="settingsUserEmail">-</strong></p>
+          <button id="logoutBtn" class="action-btn danger" type="button">Se deconnecter</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

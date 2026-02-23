@@ -1,0 +1,13 @@
+{
+  "name": "mktv-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web IPTV player with Xtream-compatible proxy",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "redis": "^4.7.0"
+  }
+}

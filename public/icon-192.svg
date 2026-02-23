@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0fd0ff"/>
+      <stop offset="100%" stop-color="#12f59f"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="36" fill="#071a2f"/>
+  <rect x="12" y="12" width="168" height="168" rx="28" fill="none" stroke="url(#g)" stroke-width="6"/>
+  <text x="96" y="106" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" font-weight="700" fill="#e9f8ff">MKTV</text>
+</svg>
