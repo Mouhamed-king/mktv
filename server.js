@@ -9,10 +9,12 @@ const PORT = process.env.PORT || 3000;
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const PLAYLIST_PATH = path.join(ROOT_DIR, "xtream_playlist.m3u");
-const UPSTREAM_TIMEOUT_MS = 8000;
+const UPSTREAM_TIMEOUT_MS = 5000;
 const STREAM_LOCK_TTL_MS = 15000;
 const MAX_CONCURRENT_STREAMS_PER_USER = 2;
 const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
+const ENFORCE_STREAM_LOCKS = false;
+const PROXY_HEADER_ATTEMPTS = 1;
 
 const AGENT_OPTIONS = {
   keepAlive: true,
@@ -527,10 +529,10 @@ async function handleProxyApi(req, res, requestUrl) {
     return sendJson(res, 400, { error: "Unsupported protocol" });
   }
 
-  const enforcement = await enforceSingleStream(req, requestUrl);
-  if (!enforcement.ok) {
-    return sendJson(res, enforcement.status, { error: enforcement.error });
-  }
+  const enforcement = ENFORCE_STREAM_LOCKS
+    ? await enforceSingleStream(req, requestUrl)
+    : { ok: true, streamId: streamIdFromRequest(req, requestUrl) || "" };
+  if (!enforcement.ok) return sendJson(res, enforcement.status, { error: enforcement.error });
   const rewriteParams = {
     sid: enforcement.streamId,
     at: extractBearerToken(req, requestUrl),
@@ -563,7 +565,7 @@ async function handleProxyApi(req, res, requestUrl) {
       Host: target.host,
       Connection: "keep-alive",
     },
-  ];
+  ].slice(0, PROXY_HEADER_ATTEMPTS);
 
   if (req.headers.range) {
     for (const headers of headerVariants) {
@@ -618,7 +620,7 @@ async function handleProxyApi(req, res, requestUrl) {
       return res.end(rewritten);
     }
 
-    const shouldRetry = [401, 403, 429].includes(upstreamStatus);
+    const shouldRetry = ENFORCE_STREAM_LOCKS && [401, 403, 429].includes(upstreamStatus);
     if (shouldRetry && attempt < headerVariants.length - 1) {
       continue;
     }

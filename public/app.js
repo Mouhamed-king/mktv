@@ -1,7 +1,6 @@
 const STORAGE_FAVORITES = "mktv.favorites.v1";
 const STORAGE_RECENT = "mktv.recent.v1";
 const STORAGE_STREAM_ID = "mktv.stream_id.v1";
-const MKTV_LOGO_FALLBACK = "/mktv-logo.jpg";
 const CHANNEL_FALLBACK_THUMB =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180'%3E%3Crect width='100%25' height='100%25' fill='%23051a2f'/%3E%3C/svg%3E";
 
@@ -74,6 +73,7 @@ let networkRecoveryAttempts = 0;
 let lockRecoveryAttempts = 0;
 let supabaseClient = null;
 let deferredInstallPrompt = null;
+let playerLoadingSafetyTimer = null;
 
 const FAST_LIVE_HLS_CONFIG = {
   enableWorker: true,
@@ -88,12 +88,12 @@ const FAST_LIVE_HLS_CONFIG = {
   maxLiveSyncPlaybackRate: 1.5,
   startFragPrefetch: true,
   testBandwidth: false,
-  manifestLoadingTimeOut: 7000,
-  manifestLoadingMaxRetry: 1,
-  levelLoadingTimeOut: 7000,
-  levelLoadingMaxRetry: 1,
-  fragLoadingTimeOut: 10000,
-  fragLoadingMaxRetry: 2,
+  manifestLoadingTimeOut: 5000,
+  manifestLoadingMaxRetry: 0,
+  levelLoadingTimeOut: 5000,
+  levelLoadingMaxRetry: 0,
+  fragLoadingTimeOut: 7000,
+  fragLoadingMaxRetry: 1,
 };
 
 init().catch((error) => {
@@ -568,7 +568,7 @@ function createChannelCard(channel) {
   image.alt = channel.name;
   image.loading = "lazy";
   image.referrerPolicy = "no-referrer";
-  image.src = channel.logo || MKTV_LOGO_FALLBACK;
+  image.src = channel.logo || CHANNEL_FALLBACK_THUMB;
   image.addEventListener("error", () => {
     if (image.src.startsWith("data:image/svg+xml")) return;
     image.src = CHANNEL_FALLBACK_THUMB;
@@ -699,7 +699,7 @@ function playChannel(channel) {
         if (thisHls === hls) hls = null;
         return;
       }
-      if (networkRecoveryAttempts < 2) {
+      if (networkRecoveryAttempts < 1) {
         networkRecoveryAttempts += 1;
         els.playerStatus.textContent = "Resynchronisation reseau...";
         thisHls.stopLoad();
@@ -760,7 +760,17 @@ function updatePlayerLayout(hasActivePlayback) {
 }
 
 function setPlayerLoading(isLoading) {
+  if (playerLoadingSafetyTimer) {
+    clearTimeout(playerLoadingSafetyTimer);
+    playerLoadingSafetyTimer = null;
+  }
   els.playerLoading?.classList.toggle("hidden", !isLoading);
+  if (isLoading) {
+    playerLoadingSafetyTimer = setTimeout(() => {
+      els.playerLoading?.classList.add("hidden");
+      playerLoadingSafetyTimer = null;
+    }, 5000);
+  }
 }
 
 function isFavorite(url) {

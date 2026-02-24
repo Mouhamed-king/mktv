@@ -165,7 +165,7 @@ body {
 
 .brand-row .mktv-logo-img {
   width: 100%;
-  max-width: 190px;
+  max-width: 170px;
 }
 
 .profile-card {
@@ -280,7 +280,8 @@ body {
 .avatar-logo {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background: #061b30;
 }
 
 .sidebar-head {
@@ -293,7 +294,7 @@ body {
 
 .group-nav {
   overflow-y: auto;
-  max-height: calc(100vh - 325px);
+  max-height: calc(100vh - 420px);
   padding-right: 4px;
   display: flex;
   flex-direction: column;
@@ -370,7 +371,7 @@ body {
 }
 
 .topbar-logo {
-  width: min(180px, 44vw);
+  width: min(130px, 30vw);
   height: auto;
   object-fit: contain;
 }
@@ -512,8 +513,8 @@ body.has-active-player .player-head {
 }
 
 .player-loading-logo {
-  width: min(220px, 60vw);
-  max-height: 72px;
+  width: min(210px, 58vw);
+  max-height: 68px;
   object-fit: contain;
   filter: drop-shadow(0 2px 8px rgba(255, 66, 66, 0.35));
 }
@@ -756,11 +757,27 @@ body.has-active-player .channels-grid {
 }
 
 @media (min-width: 981px) {
+  #mainTabsPanel {
+    order: 20;
+    margin-top: auto;
+  }
+
+  #groupsBlock {
+    order: 10;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #groupsBlock .group-nav {
+    max-height: none;
+    height: 100%;
+    min-height: 0;
+  }
+
   .main-tabs {
-    position: absolute;
-    left: 10px;
-    right: 10px;
-    bottom: 12px;
+    position: static;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
@@ -778,7 +795,7 @@ body.has-active-player .channels-grid {
 
   body.has-active-player .player-shell {
     max-width: min(540px, 48vw);
-    margin-left: auto;
+    margin-inline: auto;
   }
 
   body.has-active-player #player {
