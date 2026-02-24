@@ -1,6 +1,9 @@
 const STORAGE_FAVORITES = "mktv.favorites.v1";
 const STORAGE_RECENT = "mktv.recent.v1";
 const STORAGE_STREAM_ID = "mktv.stream_id.v1";
+const MKTV_LOGO_FALLBACK = "/mktv-logo.jpg";
+const CHANNEL_FALLBACK_THUMB =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180'%3E%3Crect width='100%25' height='100%25' fill='%23051a2f'/%3E%3C/svg%3E";
 
 const state = {
   q: "",
@@ -59,6 +62,7 @@ const els = {
   currentTitle: document.getElementById("currentTitle"),
   playerShell: document.querySelector(".player-shell"),
   player: document.getElementById("player"),
+  playerLoading: document.getElementById("playerLoading"),
   playerStatus: document.getElementById("playerStatus"),
   playerFullscreenBtn: document.getElementById("playerFullscreenBtn"),
 };
@@ -254,6 +258,7 @@ function bindUiEvents() {
   els.playerFullscreenBtn?.addEventListener("click", () => {
     requestPlayerFullscreen();
   });
+  bindPlayerLoadingEvents();
 
   bindFullscreenTracking();
 
@@ -271,6 +276,23 @@ function bindUiEvents() {
     if (!state.accessToken) return;
     releaseCurrentStream({ silent: true });
   });
+}
+
+function bindPlayerLoadingEvents() {
+  const video = els.player;
+  if (!video) return;
+
+  video.addEventListener("loadstart", () => {
+    if (!state.hasActivePlayback) return;
+    setPlayerLoading(true);
+  });
+  video.addEventListener("waiting", () => {
+    if (!state.hasActivePlayback) return;
+    setPlayerLoading(true);
+  });
+  video.addEventListener("canplay", () => setPlayerLoading(false));
+  video.addEventListener("playing", () => setPlayerLoading(false));
+  video.addEventListener("error", () => setPlayerLoading(false));
 }
 
 function setupPwaInstall() {
@@ -546,9 +568,11 @@ function createChannelCard(channel) {
   image.alt = channel.name;
   image.loading = "lazy";
   image.referrerPolicy = "no-referrer";
-  image.src =
-    channel.logo ||
-    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180'%3E%3Crect width='100%25' height='100%25' fill='%23051a2f'/%3E%3C/svg%3E";
+  image.src = channel.logo || MKTV_LOGO_FALLBACK;
+  image.addEventListener("error", () => {
+    if (image.src.startsWith("data:image/svg+xml")) return;
+    image.src = CHANNEL_FALLBACK_THUMB;
+  });
 
   const title = document.createElement("div");
   title.className = "channel-name";
@@ -599,6 +623,7 @@ function playChannel(channel) {
   els.playerStatus.textContent = `Connexion au flux... (${channel.group})`;
 
   const video = els.player;
+  setPlayerLoading(true);
   teardownPlayer(video);
 
   if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -606,12 +631,14 @@ function playChannel(channel) {
     video.play().then(() => {
       if (currentRequestId !== playRequestId) return;
       els.playerStatus.textContent = `Lecture en cours (${channel.group})`;
+      setPlayerLoading(false);
     }).catch(() => {});
     return;
   }
 
   if (!window.Hls || !window.Hls.isSupported()) {
     els.playerStatus.textContent = "Votre navigateur ne supporte pas HLS.";
+    setPlayerLoading(false);
     return;
   }
 
@@ -667,6 +694,7 @@ function playChannel(channel) {
             ? "Un autre appareil utilise deja ce compte en lecture."
           : "Chaine non autorisee ou bloquee par le fournisseur IPTV.";
         els.playerStatus.textContent = `${reason} (code ${statusCode}).`;
+        setPlayerLoading(false);
         thisHls.destroy();
         if (thisHls === hls) hls = null;
         return;
@@ -679,6 +707,7 @@ function playChannel(channel) {
         return;
       }
       els.playerStatus.textContent = "Flux indisponible apres plusieurs tentatives reseau.";
+      setPlayerLoading(false);
       thisHls.destroy();
       if (thisHls === hls) hls = null;
       return;
@@ -691,6 +720,7 @@ function playChannel(channel) {
     }
 
     els.playerStatus.textContent = `Erreur HLS: ${data.details || data.type || "fatal"}`;
+    setPlayerLoading(false);
     thisHls.destroy();
     if (thisHls === hls) hls = null;
   });
@@ -710,6 +740,7 @@ function teardownPlayer(video) {
   video.removeAttribute("src");
   video.src = "";
   video.load();
+  setPlayerLoading(false);
 }
 
 function clearCurrentPlaybackUi() {
@@ -719,12 +750,17 @@ function clearCurrentPlaybackUi() {
   els.playerStatus.textContent = "";
   teardownPlayer(els.player);
   updatePlayerLayout(false);
+  setPlayerLoading(false);
 }
 
 function updatePlayerLayout(hasActivePlayback) {
   state.hasActivePlayback = Boolean(hasActivePlayback);
   document.body.classList.toggle("has-active-player", state.hasActivePlayback);
   els.playerShell.classList.toggle("is-hidden", !state.hasActivePlayback);
+}
+
+function setPlayerLoading(isLoading) {
+  els.playerLoading?.classList.toggle("hidden", !isLoading);
 }
 
 function isFavorite(url) {

@@ -18,7 +18,9 @@
 <body>
   <section id="authView" class="auth-view">
     <div class="auth-card">
-      <h1>MKTV</h1>
+      <div class="auth-logo-wrap">
+        <img class="mktv-logo-img" src="/mktv-logo.jpg" alt="MKTV" onerror="this.onerror=null;this.src='/icon-512.svg';" />
+      </div>
       <p class="muted">Connecte-toi pour acceder a tes chaines, favoris et historique.</p>
 
       <div class="auth-tabs">
@@ -49,11 +51,13 @@
   <div id="appView" class="app hidden">
     <aside class="sidebar">
       <div class="brand-row">
-        <h1>MKTV</h1>
+        <img class="mktv-logo-img" src="/mktv-logo.jpg" alt="MKTV" onerror="this.onerror=null;this.src='/icon-512.svg';" />
       </div>
 
       <div class="profile-card">
-        <div class="avatar">M</div>
+        <div class="avatar">
+          <img class="avatar-logo" src="/mktv-logo.jpg" alt="MKTV" onerror="this.onerror=null;this.src='/icon-512.svg';" />
+        </div>
         <div class="profile-meta">
           <p id="userEmail" class="email">mktv@local</p>
           <p class="trial">Compte actif</p>
@@ -61,14 +65,42 @@
       </div>
 
       <button id="toggleMainTabsBtn" class="accordion-toggle" type="button">Menus</button>
-      <div id="mainTabsPanel" class="accordion-panel is-open">
-        <div class="main-tabs">
-          <button class="main-tab active" data-tab="live" type="button">Live</button>
-          <button class="main-tab" data-tab="favorites" type="button">Favoris</button>
-          <button class="main-tab" data-tab="recent" type="button">Recent</button>
-          <button class="main-tab" data-tab="settings" type="button">Parametres</button>
+        <div id="mainTabsPanel" class="accordion-panel is-open">
+          <div class="main-tabs">
+          <button class="main-tab active" data-tab="live" type="button" aria-label="Live" title="Live">
+            <span class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M3 11.2L12 4l9 7.2v8.3a1.5 1.5 0 0 1-1.5 1.5H15v-6h-6v6H4.5A1.5 1.5 0 0 1 3 19.5z"></path>
+              </svg>
+            </span>
+            <span class="tab-label">Live</span>
+          </button>
+          <button class="main-tab" data-tab="favorites" type="button" aria-label="Favoris" title="Favoris">
+            <span class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M12 20.7l-1.1-1C6 15.3 3 12.6 3 9.3A4.3 4.3 0 0 1 7.3 5c1.8 0 3.4.9 4.4 2.3A5.4 5.4 0 0 1 16.1 5 4.3 4.3 0 0 1 20.4 9.3c0 3.3-3 6-7.9 10.4z"></path>
+              </svg>
+            </span>
+            <span class="tab-label">Favoris</span>
+          </button>
+          <button class="main-tab" data-tab="recent" type="button" aria-label="Recent" title="Recent">
+            <span class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M12 3a9 9 0 1 0 8.6 11.7h-2.1A7 7 0 1 1 12 5V2.8l4 3.2-4 3.2V7a5 5 0 1 0 4.8 6.6h-2.2A3 3 0 1 1 12 9z"></path>
+              </svg>
+            </span>
+            <span class="tab-label">Recent</span>
+          </button>
+          <button class="main-tab" data-tab="settings" type="button" aria-label="Parametres" title="Parametres">
+            <span class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.5-2.4 1a8.1 8.1 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a8.1 8.1 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7.8 7.8 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8.1 8.1 0 0 0 1.7 1l.4 2.6h4l.4-2.6a8.1 8.1 0 0 0 1.7-1l2.4 1 2-3.5zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"></path>
+              </svg>
+            </span>
+            <span class="tab-label">Parametres</span>
+          </button>
+          </div>
         </div>
-      </div>
 
       <button id="toggleGroupsBtn" class="accordion-toggle" type="button">Categories</button>
       <div id="groupsBlock" class="accordion-panel is-open">
@@ -92,6 +124,7 @@
     <main class="main">
       <header class="topbar">
         <div class="title-wrap">
+          <img class="topbar-logo" src="/mktv-logo.jpg" alt="MKTV" onerror="this.onerror=null;this.src='/icon-512.svg';" />
           <h2 id="pageTitle">Live</h2>
           <p class="muted small" id="listMeta">Chargement...</p>
         </div>
@@ -116,6 +149,17 @@
           </div>
         </div>
           <video id="player" controls autoplay playsinline></video>
+          <div id="playerLoading" class="player-loading hidden" aria-live="polite">
+            <div class="player-loading-brand" aria-hidden="true">
+              <img class="player-loading-logo" src="/mktv-logo.jpg" alt="" onerror="this.onerror=null;this.src='/icon-512.svg';" />
+            </div>
+            <div class="player-loading-skeleton" aria-hidden="true">
+              <div class="skeleton-line line-lg"></div>
+              <div class="skeleton-line line-md"></div>
+              <div class="skeleton-line line-sm"></div>
+            </div>
+            <p>Connexion au direct...</p>
+          </div>
         </div>
 
         <div class="channels-shell">
