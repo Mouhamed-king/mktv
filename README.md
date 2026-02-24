@@ -266,6 +266,5 @@ Le fichier `render.yaml` est fourni et peut etre utilise directement.
 Pour tester en local, cree un fichier `.env` a la racine en copiant `.env.example` puis remplis:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
-- `REDIS_URL` (obligatoire si tu veux le verrou multi-instances comme en production)
 
 Sur Render, configure ces variables dans l'interface (pas besoin de fichier `.env`).

@@ -4,7 +4,6 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
-const { createClient } = require("redis");
 
 const PORT = process.env.PORT || 3000;
 const ROOT_DIR = __dirname;
@@ -12,7 +11,6 @@ const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const PLAYLIST_PATH = path.join(ROOT_DIR, "xtream_playlist.m3u");
 const UPSTREAM_TIMEOUT_MS = 15000;
 const STREAM_LOCK_TTL_MS = 90000;
-const REDIS_URL = process.env.REDIS_URL || "";
 
 const AGENT_OPTIONS = {
   keepAlive: true,
@@ -48,10 +46,6 @@ const MIME_TYPES = {
 const { supabaseUrl: SUPABASE_URL, supabaseAnonKey: SUPABASE_ANON_KEY } = loadSupabasePublicConfig();
 const ACTIVE_STREAMS = new Map();
 const TOKEN_CACHE = new Map();
-let redisClient = null;
-let redisReady = false;
-
-initRedisClient();
 
 const { channels, groups } = loadPlaylist(PLAYLIST_PATH);
 console.log(`Playlist loaded: ${channels.length} channels, ${groups.length} groups`);
@@ -211,8 +205,13 @@ function handlePublicConfig(res) {
   });
 }
 
-function buildProxyUrl(rawUrl) {
-  return `/api/proxy?url=${encodeURIComponent(rawUrl)}`;
+function buildProxyUrl(rawUrl, extraParams = {}) {
+  const params = new URLSearchParams({
+    url: rawUrl,
+  });
+  if (extraParams.sid) params.set("sid", extraParams.sid);
+  if (extraParams.at) params.set("at", extraParams.at);
+  return `/api/proxy?${params.toString()}`;
 }
 
 function resolveUri(uri, baseUrl) {
@@ -225,7 +224,7 @@ function resolveUri(uri, baseUrl) {
   }
 }
 
-function rewriteManifest(manifestText, sourceUrl) {
+function rewriteManifest(manifestText, sourceUrl, extraParams = {}) {
   const baseUrl = new URL(sourceUrl);
   const lines = manifestText.split(/\r?\n/);
 
@@ -237,14 +236,14 @@ function rewriteManifest(manifestText, sourceUrl) {
       if (trimmed.includes('URI="')) {
         return line.replace(/URI="([^"]+)"/g, (full, uri) => {
           const absoluteUri = resolveUri(uri, baseUrl);
-          return absoluteUri ? `URI="${buildProxyUrl(absoluteUri)}"` : full;
+          return absoluteUri ? `URI="${buildProxyUrl(absoluteUri, extraParams)}"` : full;
         });
       }
       return line;
     }
 
     const absolute = resolveUri(trimmed, baseUrl);
-    return absolute ? buildProxyUrl(absolute) : line;
+    return absolute ? buildProxyUrl(absolute, extraParams) : line;
   });
 
   return rewritten.join("\n");
@@ -260,30 +259,6 @@ function extractBearerToken(req, requestUrl) {
   const fromHeader = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
   const fromQuery = requestUrl.searchParams.get("at") || "";
   return fromHeader || fromQuery;
-}
-
-async function initRedisClient() {
-  if (!REDIS_URL) {
-    console.log("Stream lock backend: memory (REDIS_URL not set)");
-    return;
-  }
-  try {
-    redisClient = createClient({ url: REDIS_URL });
-    redisClient.on("error", (err) => {
-      redisReady = false;
-      console.error("Redis client error:", err.message);
-    });
-    await redisClient.connect();
-    redisReady = true;
-    console.log("Stream lock backend: redis");
-  } catch (error) {
-    redisReady = false;
-    console.error("Redis connection failed:", error.message);
-  }
-}
-
-function streamLockKey(userId) {
-  return `mktv:active-stream:${userId}`;
 }
 
 function cleanupOldStreamLocks() {
@@ -380,36 +355,6 @@ async function enforceSingleStream(req, requestUrl) {
   if (!auth.ok) return auth;
   const user = auth.user;
 
-  if (REDIS_URL) {
-    if (!redisClient || !redisReady) {
-      return { ok: false, status: 503, error: "Stream lock backend unavailable" };
-    }
-    const key = streamLockKey(user.id);
-    const currentValue = await redisClient.get(key);
-    if (currentValue && currentValue !== streamId) {
-      return {
-        ok: false,
-        status: 409,
-        error: "Un autre flux est deja actif pour ce compte",
-      };
-    }
-    if (!currentValue) {
-      const created = await redisClient.set(key, streamId, { NX: true, PX: STREAM_LOCK_TTL_MS });
-      if (created !== "OK") {
-        const racedValue = await redisClient.get(key);
-        if (racedValue && racedValue !== streamId) {
-          return {
-            ok: false,
-            status: 409,
-            error: "Un autre flux est deja actif pour ce compte",
-          };
-        }
-      }
-    }
-    await redisClient.pExpire(key, STREAM_LOCK_TTL_MS);
-    return { ok: true, userId: user.id, streamId };
-  }
-
   cleanupOldStreamLocks();
   const now = Date.now();
   const existing = ACTIVE_STREAMS.get(user.id);
@@ -478,17 +423,6 @@ async function handleSessionRelease(req, res) {
   }
   const body = await readJsonBody(req).catch(() => ({}));
   const streamId = String(body.streamId || streamIdFromRequest(req, requestUrl) || "");
-  if (auth.user?.id && streamId && REDIS_URL) {
-    if (!redisClient || !redisReady) {
-      return sendJson(res, 503, { error: "Stream lock backend unavailable" });
-    }
-    const key = streamLockKey(auth.user.id);
-    const currentValue = await redisClient.get(key);
-    if (currentValue === streamId) {
-      await redisClient.del(key);
-    }
-    return sendJson(res, 200, { ok: true });
-  }
   if (auth.user?.id && streamId) {
     const lock = ACTIVE_STREAMS.get(auth.user.id);
     if (lock && lock.streamId === streamId) {
@@ -576,6 +510,10 @@ async function handleProxyApi(req, res, requestUrl) {
   if (!enforcement.ok) {
     return sendJson(res, enforcement.status, { error: enforcement.error });
   }
+  const rewriteParams = {
+    sid: enforcement.streamId,
+    at: extractBearerToken(req, requestUrl),
+  };
 
   const controller = new AbortController();
   req.on("close", () => controller.abort());
@@ -651,7 +589,7 @@ async function handleProxyApi(req, res, requestUrl) {
 
     const text = await readStreamAsText(upstreamRes);
     if (text.includes("#EXTM3U")) {
-      const rewritten = rewriteManifest(text, resolvedTarget.href);
+      const rewritten = rewriteManifest(text, resolvedTarget.href, rewriteParams);
       res.statusCode = upstreamStatus;
       res.setHeader("content-type", "application/vnd.apple.mpegurl");
       res.setHeader("cache-control", "no-store, no-cache, must-revalidate");
