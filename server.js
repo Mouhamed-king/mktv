@@ -10,7 +10,8 @@ const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const PLAYLIST_PATH = path.join(ROOT_DIR, "xtream_playlist.m3u");
 const UPSTREAM_TIMEOUT_MS = 8000;
-const STREAM_LOCK_TTL_MS = 90000;
+const STREAM_LOCK_TTL_MS = 15000;
+const MAX_CONCURRENT_STREAMS_PER_USER = 2;
 const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const AGENT_OPTIONS = {
@@ -264,10 +265,13 @@ function extractBearerToken(req, requestUrl) {
 
 function cleanupOldStreamLocks() {
   const now = Date.now();
-  for (const [userId, lock] of ACTIVE_STREAMS.entries()) {
-    if (now - lock.lastSeenAt > STREAM_LOCK_TTL_MS) {
+  for (const [userId, locks] of ACTIVE_STREAMS.entries()) {
+    const activeLocks = (locks || []).filter((lock) => now - lock.lastSeenAt <= STREAM_LOCK_TTL_MS);
+    if (!activeLocks.length) {
       ACTIVE_STREAMS.delete(userId);
+      continue;
     }
+    ACTIVE_STREAMS.set(userId, activeLocks);
   }
 }
 
@@ -358,15 +362,26 @@ async function enforceSingleStream(req, requestUrl) {
 
   cleanupOldStreamLocks();
   const now = Date.now();
-  const existing = ACTIVE_STREAMS.get(user.id);
-  if (existing && existing.streamId !== streamId && now - existing.lastSeenAt <= STREAM_LOCK_TTL_MS) {
+  const existingLocks = ACTIVE_STREAMS.get(user.id) || [];
+  const stillActive = existingLocks.filter((lock) => now - lock.lastSeenAt <= STREAM_LOCK_TTL_MS);
+  const existingSame = stillActive.find((lock) => lock.streamId === streamId);
+
+  if (existingSame) {
+    existingSame.lastSeenAt = now;
+    ACTIVE_STREAMS.set(user.id, stillActive);
+    return { ok: true, userId: user.id, streamId };
+  }
+
+  if (stillActive.length >= MAX_CONCURRENT_STREAMS_PER_USER) {
     return {
       ok: false,
       status: 409,
-      error: "Un autre flux est deja actif pour ce compte",
+      error: `Limite atteinte: ${MAX_CONCURRENT_STREAMS_PER_USER} flux actifs pour ce compte`,
     };
   }
-  ACTIVE_STREAMS.set(user.id, { streamId, lastSeenAt: now });
+
+  stillActive.push({ streamId, lastSeenAt: now });
+  ACTIVE_STREAMS.set(user.id, stillActive);
   return { ok: true, userId: user.id, streamId };
 }
 
@@ -425,10 +440,15 @@ async function handleSessionRelease(req, res) {
   const body = await readJsonBody(req).catch(() => ({}));
   const streamId = String(body.streamId || streamIdFromRequest(req, requestUrl) || "");
   if (auth.user?.id && streamId) {
-    const lock = ACTIVE_STREAMS.get(auth.user.id);
-    if (lock && lock.streamId === streamId) {
+    const locks = ACTIVE_STREAMS.get(auth.user.id) || [];
+    const nextLocks = locks.filter((lock) => lock.streamId !== streamId);
+    if (nextLocks.length) {
+      ACTIVE_STREAMS.set(auth.user.id, nextLocks);
+    } else {
       ACTIVE_STREAMS.delete(auth.user.id);
     }
+  } else if (auth.user?.id) {
+    ACTIVE_STREAMS.delete(auth.user.id);
   }
   return sendJson(res, 200, { ok: true });
 }

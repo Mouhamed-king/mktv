@@ -1,5 +1,6 @@
 const STORAGE_FAVORITES = "mktv.favorites.v1";
 const STORAGE_RECENT = "mktv.recent.v1";
+const STORAGE_STREAM_ID = "mktv.stream_id.v1";
 
 const state = {
   q: "",
@@ -16,7 +17,7 @@ const state = {
   recent: [],
   user: null,
   accessToken: "",
-  streamId: createStreamId(),
+  streamId: loadOrCreateStreamId(),
 };
 
 const els = {
@@ -65,6 +66,7 @@ let hls = null;
 let searchTimer = null;
 let playRequestId = 0;
 let networkRecoveryAttempts = 0;
+let lockRecoveryAttempts = 0;
 let supabaseClient = null;
 let deferredInstallPrompt = null;
 
@@ -200,6 +202,7 @@ function bindUiEvents() {
     if (supabaseClient) {
       await supabaseClient.auth.signOut({ scope: "global" });
     }
+    rotateStreamId();
     state.user = null;
     state.accessToken = "";
     showAuth();
@@ -579,6 +582,7 @@ function playChannel(channel) {
   playRequestId += 1;
   const currentRequestId = playRequestId;
   networkRecoveryAttempts = 0;
+  lockRecoveryAttempts = 0;
 
   state.selectedUrl = channel.url;
   addToRecent(channel);
@@ -641,6 +645,16 @@ function playChannel(channel) {
     if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
       const statusCode = data?.response?.code || 0;
       if ([401, 403, 405, 409, 429].includes(statusCode)) {
+        if (statusCode === 409 && lockRecoveryAttempts < 1) {
+          lockRecoveryAttempts += 1;
+          els.playerStatus.textContent = "Session IPTV en conflit, tentative de recuperation...";
+          releaseCurrentStream({ silent: true, force: true })
+            .finally(() => {
+              if (currentRequestId !== playRequestId || thisHls !== hls) return;
+              playChannel(channel);
+            });
+          return;
+        }
         const reason = statusCode === 429
           ? "Trop de requetes vers le fournisseur IPTV."
           : statusCode === 409
@@ -750,18 +764,43 @@ function createStreamId() {
   return `mktv-${Date.now().toString(36)}-${random}`;
 }
 
+function loadOrCreateStreamId() {
+  try {
+    const existing = localStorage.getItem(STORAGE_STREAM_ID);
+    if (existing && existing.startsWith("mktv-")) return existing;
+  } catch {}
+
+  const created = createStreamId();
+  try {
+    localStorage.setItem(STORAGE_STREAM_ID, created);
+  } catch {}
+  return created;
+}
+
+function rotateStreamId() {
+  state.streamId = createStreamId();
+  try {
+    localStorage.setItem(STORAGE_STREAM_ID, state.streamId);
+  } catch {}
+}
+
 async function releaseCurrentStream(options = {}) {
   const silent = Boolean(options.silent);
+  const force = Boolean(options.force);
   if (!state.accessToken || !state.streamId) return;
   try {
+    const headers = {
+      "content-type": "application/json",
+      Authorization: `Bearer ${state.accessToken}`,
+    };
+    if (!force) headers["x-mktv-stream-id"] = state.streamId;
+
+    const body = force ? {} : { streamId: state.streamId };
+
     await fetch("/api/session/release", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        Authorization: `Bearer ${state.accessToken}`,
-        "x-mktv-stream-id": state.streamId,
-      },
-      body: JSON.stringify({ streamId: state.streamId }),
+      headers,
+      body: JSON.stringify(body),
       keepalive: true,
     });
   } catch (error) {
