@@ -18,6 +18,7 @@ const state = {
   user: null,
   accessToken: "",
   streamId: loadOrCreateStreamId(),
+  hasActivePlayback: false,
 };
 
 const els = {
@@ -119,6 +120,7 @@ async function initSupabase() {
       state.accessToken = session.access_token || "";
       return;
     }
+    clearCurrentPlaybackUi();
     state.user = null;
     state.accessToken = "";
     showAuth();
@@ -199,6 +201,7 @@ function bindUiEvents() {
 
   els.logoutBtn.addEventListener("click", async () => {
     await releaseCurrentStream();
+    clearCurrentPlaybackUi();
     if (supabaseClient) {
       await supabaseClient.auth.signOut({ scope: "global" });
     }
@@ -320,6 +323,7 @@ let appBootstrapped = false;
 async function ensureAppLoaded() {
   if (appBootstrapped) return;
   appBootstrapped = true;
+  updatePlayerLayout(false);
   await loadGroups();
   await refreshChannels();
   renderFavorites();
@@ -585,8 +589,10 @@ function playChannel(channel) {
   lockRecoveryAttempts = 0;
 
   state.selectedUrl = channel.url;
+  state.hasActivePlayback = true;
   addToRecent(channel);
   renderLiveChannels();
+  updatePlayerLayout(true);
 
   const streamUrl = makeProxyUrl(channel.url);
   els.currentTitle.textContent = channel.name;
@@ -704,6 +710,21 @@ function teardownPlayer(video) {
   video.removeAttribute("src");
   video.src = "";
   video.load();
+}
+
+function clearCurrentPlaybackUi() {
+  state.selectedUrl = "";
+  state.hasActivePlayback = false;
+  els.currentTitle.textContent = "Selectionnez une chaine";
+  els.playerStatus.textContent = "";
+  teardownPlayer(els.player);
+  updatePlayerLayout(false);
+}
+
+function updatePlayerLayout(hasActivePlayback) {
+  state.hasActivePlayback = Boolean(hasActivePlayback);
+  document.body.classList.toggle("has-active-player", state.hasActivePlayback);
+  els.playerShell.classList.toggle("is-hidden", !state.hasActivePlayback);
 }
 
 function isFavorite(url) {
