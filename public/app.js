@@ -107,6 +107,7 @@ async function init() {
   hydrateLocalState();
   bindUiEvents();
   await initSupabase();
+  handleSupabaseAuthHashError();
   setupPwaInstall();
   await restoreSession();
 }
@@ -194,6 +195,7 @@ function bindUiEvents() {
       email: els.signupEmail.value.trim(),
       password: els.signupPassword.value,
       options: {
+        emailRedirectTo: window.location.origin,
         data: {
           display_name: displayName,
         },
@@ -291,6 +293,24 @@ function bindUiEvents() {
     els.groupsBlock.classList.remove("is-open");
     els.groupsBlock.classList.add("is-collapsed");
   }
+}
+
+function handleSupabaseAuthHashError() {
+  const rawHash = (window.location.hash || "").replace(/^#/, "");
+  if (!rawHash) return;
+  const params = new URLSearchParams(rawHash);
+  const errorCode = params.get("error_code") || "";
+  const errorDescription = params.get("error_description") || "";
+  if (!errorCode && !errorDescription) return;
+
+  if (errorCode === "otp_expired") {
+    setAuthStatus("Lien email expire. Refais l'inscription pour recevoir un nouveau lien.");
+  } else {
+    const decoded = decodeURIComponent(errorDescription.replace(/\+/g, " "));
+    setAuthStatus(decoded || "Erreur de validation email.");
+  }
+
+  history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
 }
 
 function bindPlayerLoadingEvents() {
