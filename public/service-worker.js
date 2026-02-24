@@ -1,12 +1,11 @@
-const CACHE_NAME = "mktv-shell-v1";
+const CACHE_NAME = "mktv-shell-v2";
 const ASSETS = [
   "/",
   "/index.html",
   "/styles.css",
   "/app.js",
   "/manifest.webmanifest",
-  "/icon-192.svg",
-  "/icon-512.svg",
+  "/mktv-logo.png",
 ];
 
 self.addEventListener("install", (event) => {

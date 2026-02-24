@@ -136,7 +136,7 @@ body {
 .app {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 230px 1fr;
+  grid-template-columns: 268px 1fr;
 }
 
 .sidebar {
@@ -155,7 +155,10 @@ body {
 
 .brand-row {
   border-bottom: 1px solid #0f3557;
-  padding: 10px 6px 14px;
+  padding: 0 0 2px;
+  display: flex;
+  align-items: center;
+  line-height: 0;
 }
 
 .brand-row h1 {
@@ -165,30 +168,33 @@ body {
 }
 
 .brand-row .mktv-logo-img {
-  width: 100%;
-  max-width: 170px;
+  width: auto;
+  height: auto;
+  max-width: 82%;
+  margin: 0 auto;
 }
 
 .profile-card {
   display: grid;
-  grid-template-columns: 36px 1fr;
-  gap: 10px;
-  padding: 8px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px;
   border-radius: 10px;
   background: #08203a;
   border: 1px solid #114266;
 }
 
 .avatar {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
   display: grid;
   place-items: center;
-  font-weight: 700;
-  color: #041326;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  font-weight: 600;
+  color: #9fd5ff;
+  background: linear-gradient(135deg, #0a2743, #0d3558);
   overflow: hidden;
+  border: 1px solid #1a5b89;
 }
 
 .email,
@@ -197,15 +203,27 @@ body {
 }
 
 .email {
-  font-size: 0.8rem;
+  font-size: 0.77rem;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.avatar-user-icon {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
 }
 
 .trial {
-  margin-top: 3px;
+  margin-top: 2px;
   font-size: 0.78rem;
   color: #ffd86a;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .main-tabs {
@@ -295,6 +313,7 @@ body {
 
 .group-nav {
   overflow-y: auto;
+  overflow-x: hidden;
   max-height: calc(100vh - 420px);
   padding-right: 4px;
   display: flex;
@@ -304,6 +323,7 @@ body {
 
 .group-item {
   width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -316,6 +336,13 @@ body {
   font-family: inherit;
   cursor: pointer;
   text-align: left;
+}
+
+.group-item span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .group-item:hover {
@@ -350,8 +377,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 4px 8px;
 }
 
 .topbar-right {
@@ -368,13 +395,23 @@ body {
 
 .title-wrap {
   display: grid;
-  gap: 4px;
+  gap: 1px;
 }
 
 .topbar-logo {
-  width: min(130px, 30vw);
+  width: min(72px, 18vw);
   height: auto;
   object-fit: contain;
+}
+
+#pageTitle {
+  display: none;
+}
+
+#listMeta {
+  font-size: 0.7rem;
+  line-height: 1.1;
+  margin: 0;
 }
 
 .search-wrap {
@@ -385,7 +422,7 @@ body {
   width: 100%;
   border: 1px solid #194d77;
   border-radius: 11px;
-  padding: 11px 12px;
+  padding: 7px 9px;
   background: #061c31;
   color: var(--text);
   font-family: inherit;
@@ -399,13 +436,41 @@ body {
 .install-btn {
   border: 1px solid #1b7ba8;
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 7px 9px;
   white-space: nowrap;
   font-family: inherit;
   font-weight: 600;
+  font-size: 0.82rem;
   color: #e9fbff;
   background: linear-gradient(120deg, #0a5e99, #0ba786);
   cursor: pointer;
+}
+
+.menu-glyph {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 12px;
+}
+
+.menu-glyph::before,
+.menu-glyph::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 18px;
+  height: 2px;
+  border-radius: 99px;
+  background: currentColor;
+}
+
+.menu-glyph::before {
+  top: 0;
+  box-shadow: 0 5px 0 currentColor;
+}
+
+.menu-glyph::after {
+  bottom: 0;
 }
 
 .section-panel {
@@ -679,6 +744,21 @@ body.has-active-player .channels-grid {
   cursor: pointer;
 }
 
+.load-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.load-controls .load-btn {
+  margin-top: 10px;
+}
+
+.load-btn.secondary {
+  background: linear-gradient(120deg, #0a2e4d, #0a3f64);
+  border-color: #184f78;
+}
+
 .load-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -701,33 +781,90 @@ body.has-active-player .channels-grid {
     grid-template-columns: 1fr;
   }
 
+  .main {
+    padding-bottom: 86px;
+  }
+
   .sidebar {
-    position: static;
-    height: auto;
-    padding-bottom: 14px;
+    position: fixed;
+    inset: auto 0 0 0;
+    top: auto;
+    z-index: 70;
+    height: 72px;
+    padding: 6px;
     border-right: 0;
-    border-bottom: 1px solid #0f3557;
+    border-top: 1px solid #0f3557;
+    border-bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    background: linear-gradient(180deg, rgba(4, 17, 31, 0.96), rgba(4, 17, 31, 0.98));
+    overflow: visible;
   }
 
   .accordion-toggle {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    margin: 0;
   }
 
-  .accordion-panel.is-open {
-    display: block;
-    margin-bottom: 8px;
-  }
-
-  .accordion-panel.is-collapsed {
-    display: none;
-  }
-
-  #groupsBlock.hidden {
+  .brand-row,
+  .profile-card,
+  .sidebar-head,
+  #groupSelect {
     display: none !important;
   }
 
+  #toggleGroupsBtn {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  #mainTabsPanel {
+    display: block !important;
+    grid-column: 2 / 6;
+    grid-row: 1;
+  }
+
+  #mainTabsPanel .main-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  #mainTabsPanel .main-tab {
+    min-height: 52px;
+    justify-content: center;
+    padding: 6px;
+  }
+
+  #mainTabsPanel .main-tab .tab-label {
+    display: none;
+  }
+
+  #groupsBlock {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 72px;
+    max-height: 54vh;
+    z-index: 75;
+    border: 1px solid #12486f;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #061a2e, #041424);
+    padding: 8px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+    display: none;
+  }
+
+  #groupsBlock.is-open {
+    display: block;
+  }
+
   .group-nav {
-    max-height: 180px;
+    max-height: calc(54vh - 46px);
   }
 
   .search-wrap {
@@ -763,12 +900,17 @@ body.has-active-player .channels-grid {
 
 @media (min-width: 981px) {
   .sidebar {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    gap: 8px;
+    align-content: stretch;
+    height: 100dvh;
+    padding-bottom: 0;
   }
 
   #mainTabsPanel {
-    margin-top: auto;
+    margin-top: 0;
+    align-self: end;
   }
 
   #groupsBlock {
@@ -783,6 +925,7 @@ body.has-active-player .channels-grid {
     max-height: none;
     height: 100%;
     min-height: 0;
+    padding-bottom: 0;
   }
 
   .main-tabs {
@@ -790,6 +933,7 @@ body.has-active-player .channels-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
+    margin-top: 0;
   }
 
   .main-tab {

@@ -34,6 +34,7 @@ const els = {
   loginEmail: document.getElementById("loginEmail"),
   loginPassword: document.getElementById("loginPassword"),
   signupEmail: document.getElementById("signupEmail"),
+  signupName: document.getElementById("signupName"),
   signupPassword: document.getElementById("signupPassword"),
   userEmail: document.getElementById("userEmail"),
   settingsUserEmail: document.getElementById("settingsUserEmail"),
@@ -53,6 +54,7 @@ const els = {
   favoritesList: document.getElementById("favoritesList"),
   recentList: document.getElementById("recentList"),
   listMeta: document.getElementById("listMeta"),
+  loadLessBtn: document.getElementById("loadLessBtn"),
   loadMoreBtn: document.getElementById("loadMoreBtn"),
   liveSection: document.getElementById("liveSection"),
   favoritesSection: document.getElementById("favoritesSection"),
@@ -187,9 +189,15 @@ function bindUiEvents() {
     event.preventDefault();
     if (!supabaseClient) return;
     setAuthStatus("Inscription en cours...");
+    const displayName = (els.signupName.value || "").trim();
     const { data, error } = await supabaseClient.auth.signUp({
       email: els.signupEmail.value.trim(),
       password: els.signupPassword.value,
+      options: {
+        data: {
+          display_name: displayName,
+        },
+      },
     });
     if (error) {
       setAuthStatus(error.message || "Inscription echouee.");
@@ -242,6 +250,7 @@ function bindUiEvents() {
   });
 
   els.loadMoreBtn.addEventListener("click", () => loadMore());
+  els.loadLessBtn?.addEventListener("click", () => loadLess());
 
   els.tabButtons.forEach((button) => {
     button.addEventListener("click", () => setMainTab(button.dataset.tab || "live"));
@@ -276,6 +285,12 @@ function bindUiEvents() {
     if (!state.accessToken) return;
     releaseCurrentStream({ silent: true });
   });
+
+  // On mobile, keep categories drawer closed by default.
+  if (window.matchMedia?.("(max-width: 980px)").matches && els.groupsBlock) {
+    els.groupsBlock.classList.remove("is-open");
+    els.groupsBlock.classList.add("is-collapsed");
+  }
 }
 
 function bindPlayerLoadingEvents() {
@@ -335,7 +350,12 @@ function onAuthenticated(session) {
   if (!session?.user) return;
   state.user = session.user;
   state.accessToken = session.access_token || "";
-  els.userEmail.textContent = session.user.email || "utilisateur";
+  const displayName =
+    (session.user.user_metadata?.display_name || "").trim() ||
+    (session.user.email || "").split("@")[0] ||
+    "utilisateur";
+  els.userEmail.textContent = displayName;
+  els.userEmail.title = displayName;
   els.settingsUserEmail.textContent = session.user.email || "-";
   showApp();
   ensureAppLoaded();
@@ -364,6 +384,7 @@ function showApp() {
 
 function setMainTab(tab) {
   state.activeTab = tab;
+  const isMobile = window.matchMedia?.("(max-width: 980px)")?.matches;
   els.tabButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tab);
   });
@@ -380,8 +401,12 @@ function setMainTab(tab) {
   els.favoritesSection.classList.toggle("hidden", tab !== "favorites");
   els.recentSection.classList.toggle("hidden", tab !== "recent");
   els.settingsSection.classList.toggle("hidden", tab !== "settings");
-  els.groupsBlock.classList.toggle("hidden", tab !== "live");
-  els.toggleGroupsBtn?.classList.toggle("hidden", tab !== "live");
+  els.groupsBlock.classList.toggle("hidden", !isMobile && tab !== "live");
+  if (isMobile) {
+    els.toggleGroupsBtn?.classList.remove("hidden");
+  } else {
+    els.toggleGroupsBtn?.classList.toggle("hidden", tab !== "live");
+  }
   els.searchInput.disabled = tab !== "live";
   els.searchInput.parentElement.classList.toggle("hidden", tab !== "live");
 
@@ -493,6 +518,16 @@ async function loadMore() {
   await fetchChannelsPage(true);
 }
 
+function loadLess() {
+  if (state.channels.length <= state.limit) return;
+  state.channels = state.channels.slice(0, Math.max(state.limit, state.channels.length - state.limit));
+  state.offset = Math.max(0, state.offset - state.limit);
+  state.hasMore = state.channels.length < state.total;
+  renderLiveChannels();
+  els.listMeta.textContent = `${state.channels.length} affichees sur ${state.total}`;
+  updateLoadButtons();
+}
+
 function makeChannelsUrl() {
   const params = new URLSearchParams({
     offset: String(state.offset),
@@ -513,6 +548,7 @@ function makeProxyUrl(rawUrl) {
 
 async function fetchChannelsPage(append = false) {
   els.loadMoreBtn.disabled = true;
+  if (els.loadLessBtn) els.loadLessBtn.disabled = true;
   els.listMeta.textContent = "Chargement des chaines...";
 
   const response = await fetch(makeChannelsUrl());
@@ -525,7 +561,13 @@ async function fetchChannelsPage(append = false) {
 
   renderLiveChannels();
   els.listMeta.textContent = `${state.channels.length} affichees sur ${state.total}`;
+  updateLoadButtons();
+}
+
+function updateLoadButtons() {
   els.loadMoreBtn.disabled = !state.hasMore;
+  if (!els.loadLessBtn) return;
+  els.loadLessBtn.disabled = state.channels.length <= state.limit;
 }
 
 function renderLiveChannels() {

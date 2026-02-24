@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>MKTV Web</title>
   <meta name="theme-color" content="#071a2f" />
-  <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/mktv-logo.png?v=3" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/mktv-logo.png?v=3" />
+  <link rel="shortcut icon" href="/mktv-logo.png?v=3" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -37,6 +39,8 @@
       </form>
 
       <form id="signupForm" class="auth-form hidden">
+        <label>Nom d'utilisateur</label>
+        <input id="signupName" type="text" autocomplete="nickname" required minlength="2" maxlength="32" />
         <label>Email</label>
         <input id="signupEmail" type="email" autocomplete="email" required />
         <label>Mot de passe</label>
@@ -56,7 +60,7 @@
 
       <div class="profile-card">
         <div class="avatar">
-          <img class="avatar-logo" src="/mktv-logo.png" alt="MKTV" onerror="if(!this.dataset.fbk){this.dataset.fbk='1';this.src='/mktv-logo.jpg';return;}this.onerror=null;this.src='/icon-512.svg';" />
+          <span class="avatar-user-icon" aria-hidden="true">U</span>
         </div>
         <div class="profile-meta">
           <p id="userEmail" class="email">mktv@local</p>
@@ -64,7 +68,9 @@
         </div>
       </div>
 
-      <button id="toggleGroupsBtn" class="accordion-toggle" type="button">Categories</button>
+      <button id="toggleGroupsBtn" class="accordion-toggle" type="button" aria-label="Ouvrir les categories">
+        <span class="menu-glyph" aria-hidden="true"></span>
+      </button>
       <div id="groupsBlock" class="accordion-panel is-open">
         <div class="sidebar-head">
           <span>Categories</span>
@@ -77,7 +83,6 @@
         </nav>
       </div>
 
-      <button id="toggleMainTabsBtn" class="accordion-toggle" type="button">Menus</button>
       <div id="mainTabsPanel" class="accordion-panel is-open">
         <div class="main-tabs">
           <button class="main-tab active" data-tab="live" type="button" aria-label="Live" title="Live">
@@ -164,7 +169,10 @@
 
         <div class="channels-shell">
           <div id="channelsList" class="channels-grid"></div>
-          <button id="loadMoreBtn" class="load-btn" type="button">Charger plus</button>
+          <div class="load-controls">
+            <button id="loadLessBtn" class="load-btn secondary" type="button">Charger moins</button>
+            <button id="loadMoreBtn" class="load-btn" type="button">Charger plus</button>
+          </div>
         </div>
       </section>
 
