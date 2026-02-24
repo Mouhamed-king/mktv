@@ -268,3 +268,20 @@ Pour tester en local, cree un fichier `.env` a la racine en copiant `.env.exampl
 - `SUPABASE_ANON_KEY`
 
 Sur Render, configure ces variables dans l'interface (pas besoin de fichier `.env`).
+
+### APK Android (telephone + box IPTV Android)
+
+1. Verifier que ton service Render est en ligne (exemple: `https://mktv-web.onrender.com`).
+2. La config mobile est dans `capacitor.config.ts` et utilise cette URL.
+3. Generer/synchroniser Android:
+   - `npm run cap:sync`
+4. Ouvrir le projet natif:
+   - `npm run cap:open`
+5. Dans Android Studio:
+   - `Build` > `Generate Signed Bundle / APK` > `APK` > `release`
+6. Recuperer l'APK dans:
+   - `android/app/release/` (ou le chemin indique par Android Studio)
+
+Note:
+- Si l'URL Render change, mets a jour `server.url` dans `capacitor.config.ts`, puis relance `npm run cap:sync`.
+- Pour box IPTV Android TV, prevoir une navigation telecommande (D-pad) dans l'interface.

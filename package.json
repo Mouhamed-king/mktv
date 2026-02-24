@@ -4,9 +4,17 @@
   "private": true,
   "description": "Web IPTV player with Xtream-compatible proxy",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "cap:sync": "npx cap sync android",
+    "cap:open": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.1.0",
+    "@capacitor/cli": "^8.1.0",
+    "@capacitor/core": "^8.1.0",
     "dotenv": "^16.6.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }

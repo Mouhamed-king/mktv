@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>MKTV Web</title>
   <meta name="theme-color" content="#071a2f" />
   <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
@@ -60,14 +60,18 @@
         </div>
       </div>
 
-      <div class="main-tabs">
-        <button class="main-tab active" data-tab="live" type="button">Live</button>
-        <button class="main-tab" data-tab="favorites" type="button">Favoris</button>
-        <button class="main-tab" data-tab="recent" type="button">Recent</button>
-        <button class="main-tab" data-tab="settings" type="button">Parametres</button>
+      <button id="toggleMainTabsBtn" class="accordion-toggle" type="button">Menus</button>
+      <div id="mainTabsPanel" class="accordion-panel is-open">
+        <div class="main-tabs">
+          <button class="main-tab active" data-tab="live" type="button">Live</button>
+          <button class="main-tab" data-tab="favorites" type="button">Favoris</button>
+          <button class="main-tab" data-tab="recent" type="button">Recent</button>
+          <button class="main-tab" data-tab="settings" type="button">Parametres</button>
+        </div>
       </div>
 
-      <div id="groupsBlock">
+      <button id="toggleGroupsBtn" class="accordion-toggle" type="button">Categories</button>
+      <div id="groupsBlock" class="accordion-panel is-open">
         <div class="sidebar-head">
           <span>Categories</span>
         </div>
@@ -104,10 +108,13 @@
 
       <section id="liveSection" class="section-panel">
         <div class="player-shell">
-          <div class="player-head">
-            <h3 id="currentTitle">Selectionnez une chaine</h3>
+        <div class="player-head">
+          <h3 id="currentTitle">Selectionnez une chaine</h3>
+          <div class="player-meta">
             <p id="playerStatus" class="muted small"></p>
+            <button id="playerFullscreenBtn" class="player-fullscreen-btn" type="button">Plein ecran</button>
           </div>
+        </div>
           <video id="player" controls autoplay playsinline></video>
         </div>
 

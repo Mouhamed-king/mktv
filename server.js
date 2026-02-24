@@ -9,8 +9,9 @@ const PORT = process.env.PORT || 3000;
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const PLAYLIST_PATH = path.join(ROOT_DIR, "xtream_playlist.m3u");
-const UPSTREAM_TIMEOUT_MS = 15000;
+const UPSTREAM_TIMEOUT_MS = 8000;
 const STREAM_LOCK_TTL_MS = 90000;
+const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const AGENT_OPTIONS = {
   keepAlive: true,
@@ -338,7 +339,7 @@ async function verifySupabaseAccessToken(accessToken) {
 
   TOKEN_CACHE.set(accessToken, {
     user: response.body,
-    expiresAt: now + 30000,
+    expiresAt: now + TOKEN_CACHE_TTL_MS,
   });
   return response.body;
 }

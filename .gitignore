@@ -3,3 +3,11 @@
 Thumbs.db
 
 .env
+
+# Android / Capacitor local artifacts
+android/.gradle/
+android/.idea/
+android/local.properties
+android/captures/
+*.jks
+*.keystore

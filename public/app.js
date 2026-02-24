@@ -37,6 +37,9 @@ const els = {
   logoutBtn: document.getElementById("logoutBtn"),
   pageTitle: document.getElementById("pageTitle"),
   installAppBtn: document.getElementById("installAppBtn"),
+  toggleMainTabsBtn: document.getElementById("toggleMainTabsBtn"),
+  mainTabsPanel: document.getElementById("mainTabsPanel"),
+  toggleGroupsBtn: document.getElementById("toggleGroupsBtn"),
   groupsBlock: document.getElementById("groupsBlock"),
   tabButtons: Array.from(document.querySelectorAll(".main-tab")),
   searchInput: document.getElementById("searchInput"),
@@ -52,8 +55,10 @@ const els = {
   recentSection: document.getElementById("recentSection"),
   settingsSection: document.getElementById("settingsSection"),
   currentTitle: document.getElementById("currentTitle"),
+  playerShell: document.querySelector(".player-shell"),
   player: document.getElementById("player"),
   playerStatus: document.getElementById("playerStatus"),
+  playerFullscreenBtn: document.getElementById("playerFullscreenBtn"),
 };
 
 let hls = null;
@@ -76,6 +81,12 @@ const FAST_LIVE_HLS_CONFIG = {
   maxLiveSyncPlaybackRate: 1.5,
   startFragPrefetch: true,
   testBandwidth: false,
+  manifestLoadingTimeOut: 7000,
+  manifestLoadingMaxRetry: 1,
+  levelLoadingTimeOut: 7000,
+  levelLoadingMaxRetry: 1,
+  fragLoadingTimeOut: 10000,
+  fragLoadingMaxRetry: 2,
 };
 
 init().catch((error) => {
@@ -226,6 +237,20 @@ function bindUiEvents() {
     button.addEventListener("click", () => setMainTab(button.dataset.tab || "live"));
   });
 
+  els.toggleMainTabsBtn?.addEventListener("click", () => {
+    toggleAccordionPanel(els.mainTabsPanel);
+  });
+
+  els.toggleGroupsBtn?.addEventListener("click", () => {
+    toggleAccordionPanel(els.groupsBlock);
+  });
+
+  els.playerFullscreenBtn?.addEventListener("click", () => {
+    requestPlayerFullscreen();
+  });
+
+  bindFullscreenTracking();
+
   if (els.installAppBtn) {
     els.installAppBtn.addEventListener("click", async () => {
       if (!deferredInstallPrompt) return;
@@ -327,11 +352,45 @@ function setMainTab(tab) {
   els.recentSection.classList.toggle("hidden", tab !== "recent");
   els.settingsSection.classList.toggle("hidden", tab !== "settings");
   els.groupsBlock.classList.toggle("hidden", tab !== "live");
+  els.toggleGroupsBtn?.classList.toggle("hidden", tab !== "live");
   els.searchInput.disabled = tab !== "live";
   els.searchInput.parentElement.classList.toggle("hidden", tab !== "live");
 
   if (tab === "favorites") renderFavorites();
   if (tab === "recent") renderRecent();
+}
+
+function toggleAccordionPanel(panel) {
+  if (!panel) return;
+  const isOpen = panel.classList.contains("is-open");
+  panel.classList.toggle("is-open", !isOpen);
+  panel.classList.toggle("is-collapsed", isOpen);
+}
+
+async function requestPlayerFullscreen() {
+  const video = els.player;
+  if (!video) return;
+
+  try {
+    if (video.requestFullscreen) {
+      await video.requestFullscreen();
+      return;
+    }
+    if (video.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen();
+    }
+  } catch (error) {
+    console.warn("fullscreen request failed", error);
+  }
+}
+
+function bindFullscreenTracking() {
+  const markFullscreenState = () => {
+    const isFullscreen = Boolean(document.fullscreenElement);
+    document.body.classList.toggle("video-fullscreen", isFullscreen);
+  };
+
+  document.addEventListener("fullscreenchange", markFullscreenState);
 }
 
 async function loadGroups() {
@@ -529,15 +588,8 @@ function playChannel(channel) {
   els.currentTitle.textContent = channel.name;
   els.playerStatus.textContent = `Connexion au flux... (${channel.group})`;
 
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
-
   const video = els.player;
-  video.pause();
-  video.removeAttribute("src");
-  video.load();
+  teardownPlayer(video);
 
   if (video.canPlayType("application/vnd.apple.mpegurl")) {
     video.src = `${streamUrl}&at=${encodeURIComponent(state.accessToken)}`;
@@ -602,7 +654,8 @@ function playChannel(channel) {
       if (networkRecoveryAttempts < 2) {
         networkRecoveryAttempts += 1;
         els.playerStatus.textContent = "Resynchronisation reseau...";
-        thisHls.startLoad();
+        thisHls.stopLoad();
+        thisHls.startLoad(-1);
         return;
       }
       els.playerStatus.textContent = "Flux indisponible apres plusieurs tentatives reseau.";
@@ -621,6 +674,22 @@ function playChannel(channel) {
     thisHls.destroy();
     if (thisHls === hls) hls = null;
   });
+}
+
+function teardownPlayer(video) {
+  if (hls) {
+    try {
+      hls.stopLoad();
+      hls.detachMedia();
+    } catch {}
+    hls.destroy();
+    hls = null;
+  }
+
+  video.pause();
+  video.removeAttribute("src");
+  video.src = "";
+  video.load();
 }
 
 function isFavorite(url) {
