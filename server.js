@@ -424,15 +424,43 @@ async function approveEmail(email, approvedBy) {
 
 async function getPendingEmails() {
   if (!hasSupabaseAccessControlConfig()) return [];
-  const response = await requestSupabaseRest(
-    "/rest/v1/user_access?approved=is.false&select=email&order=created_at.asc",
+  const approvedResponse = await requestSupabaseRest(
+    "/rest/v1/user_access?approved=eq.true&select=email",
     "GET",
   );
-  if (response.status < 200 || response.status >= 300 || !Array.isArray(response.body)) return [];
-  return response.body
-    .map((row) => normalizeEmail(row.email))
-    .filter((email) => email && !isAdminEmail(email))
-    .sort((a, b) => a.localeCompare(b));
+  if (approvedResponse.status < 200 || approvedResponse.status >= 300 || !Array.isArray(approvedResponse.body)) {
+    return [];
+  }
+
+  const approvedSet = new Set(
+    approvedResponse.body.map((row) => normalizeEmail(row.email)).filter(Boolean),
+  );
+
+  const supabase = new URL(SUPABASE_URL);
+  const authUsersResponse = await requestJson({
+    protocol: supabase.protocol,
+    hostname: supabase.hostname,
+    port: supabase.port || undefined,
+    path: "/auth/v1/admin/users?page=1&per_page=1000",
+    method: "GET",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+  if (authUsersResponse.status < 200 || authUsersResponse.status >= 300 || !Array.isArray(authUsersResponse.body?.users)) {
+    return [];
+  }
+
+  const pending = [];
+  for (const user of authUsersResponse.body.users) {
+    const email = normalizeEmail(user?.email);
+    if (!email) continue;
+    if (isAdminEmail(email)) continue;
+    if (approvedSet.has(email)) continue;
+    pending.push(email);
+  }
+  return Array.from(new Set(pending)).sort((a, b) => a.localeCompare(b));
 }
 
 async function isApprovedEmail(email) {
