@@ -52,6 +52,19 @@
     </div>
   </section>
 
+  <section id="pendingView" class="auth-view hidden">
+    <div class="auth-card">
+      <div class="auth-logo-wrap">
+        <img class="mktv-logo-img" src="/mktv-logo.png" alt="MKTV" onerror="if(!this.dataset.fbk){this.dataset.fbk='1';this.src='/mktv-logo.jpg';return;}this.onerror=null;this.src='/icon-512.svg';" />
+      </div>
+      <p id="pendingMessage" class="muted">
+        Ton compte est en attente d'approbation par un administrateur.
+      </p>
+      <button id="pendingLogoutBtn" type="button" class="action-btn danger">Se deconnecter</button>
+      <p id="pendingStatus" class="muted small"></p>
+    </div>
+  </section>
+
   <div id="appView" class="app hidden">
     <aside class="sidebar">
       <div class="brand-row">

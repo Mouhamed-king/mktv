@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MKTV Admin</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/supabase-config.js"></script>
+</head>
+<body>
+  <section class="auth-view" id="loginView">
+    <div class="auth-card">
+      <h2>Admin MKTV</h2>
+      <p class="muted small">Connexion admin uniquement.</p>
+      <form id="loginForm" class="auth-form">
+        <label>Email</label>
+        <input id="email" type="email" required autocomplete="email" />
+        <label>Mot de passe</label>
+        <input id="password" type="password" required autocomplete="current-password" />
+        <button class="action-btn" type="submit">Se connecter</button>
+      </form>
+      <p id="status" class="muted small"></p>
+    </div>
+  </section>
+
+  <section class="auth-view hidden" id="adminView">
+    <div class="auth-card">
+      <h2>Validation des comptes</h2>
+      <p class="muted small">Approuve les nouveaux inscrits.</p>
+      <div id="pendingList" class="channels-grid"></div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+        <button id="refreshBtn" class="action-btn" type="button">Rafraichir</button>
+        <button id="logoutBtn" class="action-btn danger" type="button">Se deconnecter</button>
+      </div>
+      <p id="adminStatus" class="muted small"></p>
+    </div>
+  </section>
+
+  <script>
+    const els = {
+      loginView: document.getElementById("loginView"),
+      adminView: document.getElementById("adminView"),
+      loginForm: document.getElementById("loginForm"),
+      email: document.getElementById("email"),
+      password: document.getElementById("password"),
+      status: document.getElementById("status"),
+      pendingList: document.getElementById("pendingList"),
+      refreshBtn: document.getElementById("refreshBtn"),
+      logoutBtn: document.getElementById("logoutBtn"),
+      adminStatus: document.getElementById("adminStatus"),
+    };
+
+    let supabaseClient = null;
+    let accessToken = "";
+
+    init().catch(() => {
+      els.status.textContent = "Erreur d'initialisation.";
+    });
+
+    async function init() {
+      const cfg = window.MKTV_SUPABASE || {};
+      if (!cfg.url || !cfg.anonKey || !window.supabase?.createClient) {
+        els.status.textContent = "Configuration Supabase manquante.";
+        return;
+      }
+      supabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey);
+
+      els.loginForm.addEventListener("submit", onLogin);
+      els.refreshBtn.addEventListener("click", refreshPending);
+      els.logoutBtn.addEventListener("click", onLogout);
+
+      const sessionPayload = await supabaseClient.auth.getSession();
+      const session = sessionPayload?.data?.session;
+      if (!session?.access_token) return;
+      accessToken = session.access_token;
+      await enterAdminIfAllowed();
+    }
+
+    async function onLogin(event) {
+      event.preventDefault();
+      if (!supabaseClient) return;
+      els.status.textContent = "Connexion en cours...";
+      const { data, error } = await supabaseClient.auth.signInWithPassword({
+        email: els.email.value.trim(),
+        password: els.password.value,
+      });
+      if (error || !data?.session?.access_token) {
+        els.status.textContent = error?.message || "Connexion refusee.";
+        return;
+      }
+      accessToken = data.session.access_token;
+      await enterAdminIfAllowed();
+    }
+
+    function authHeaders(extra = {}) {
+      const headers = { ...extra };
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+      return headers;
+    }
+
+    async function enterAdminIfAllowed() {
+      const response = await fetch("/api/access/status", {
+        headers: authHeaders(),
+      });
+      if (!response.ok) {
+        els.status.textContent = "Verification impossible.";
+        return;
+      }
+      const payload = await response.json();
+      if (!payload?.isAdmin) {
+        document.body.innerHTML = "<h2 style='padding:24px;text-align:center;'>Page introuvable</h2>";
+        return;
+      }
+      els.loginView.classList.add("hidden");
+      els.adminView.classList.remove("hidden");
+      await refreshPending();
+    }
+
+    async function refreshPending() {
+      const response = await fetch("/api/access/pending", {
+        headers: authHeaders(),
+      });
+      if (!response.ok) {
+        els.adminStatus.textContent = "Impossible de charger les comptes en attente.";
+        return;
+      }
+      const payload = await response.json();
+      renderPending(payload.pending || []);
+      els.adminStatus.textContent = "";
+    }
+
+    function renderPending(items) {
+      if (!Array.isArray(items) || !items.length) {
+        els.pendingList.innerHTML = '<div class="muted small">Aucun compte en attente.</div>';
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      for (const email of items) {
+        const row = document.createElement("div");
+        row.className = "channel-item";
+        const title = document.createElement("div");
+        title.className = "channel-name";
+        title.textContent = email;
+        const actions = document.createElement("div");
+        actions.className = "channel-actions";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "action-btn";
+        button.textContent = "Approuver";
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          await approve(email);
+          button.disabled = false;
+        });
+        actions.appendChild(button);
+        row.append(title, actions);
+        fragment.appendChild(row);
+      }
+      els.pendingList.innerHTML = "";
+      els.pendingList.appendChild(fragment);
+    }
+
+    async function approve(email) {
+      const response = await fetch("/api/access/approve", {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ email }),
+      });
+      if (!response.ok) {
+        els.adminStatus.textContent = `Echec approbation: ${email}`;
+        return;
+      }
+      els.adminStatus.textContent = `${email} approuve.`;
+      await refreshPending();
+    }
+
+    async function onLogout() {
+      if (supabaseClient) {
+        await supabaseClient.auth.signOut({ scope: "global" });
+      }
+      accessToken = "";
+      els.adminView.classList.add("hidden");
+      els.loginView.classList.remove("hidden");
+      els.status.textContent = "Session fermee.";
+    }
+  </script>
+</body>
+</html>

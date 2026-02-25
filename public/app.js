@@ -21,12 +21,16 @@ const state = {
   accessToken: "",
   streamId: loadOrCreateStreamId(),
   hasActivePlayback: false,
+  accessApproved: false,
+  isAdmin: false,
 };
 
 const els = {
   authView: document.getElementById("authView"),
+  pendingView: document.getElementById("pendingView"),
   appView: document.getElementById("appView"),
   authStatus: document.getElementById("authStatus"),
+  pendingStatus: document.getElementById("pendingStatus"),
   showLoginBtn: document.getElementById("showLoginBtn"),
   showSignupBtn: document.getElementById("showSignupBtn"),
   loginForm: document.getElementById("loginForm"),
@@ -40,6 +44,8 @@ const els = {
   settingsUserEmail: document.getElementById("settingsUserEmail"),
   supabaseStatus: document.getElementById("supabaseStatus"),
   logoutBtn: document.getElementById("logoutBtn"),
+  pendingLogoutBtn: document.getElementById("pendingLogoutBtn"),
+  pendingMessage: document.getElementById("pendingMessage"),
   pageTitle: document.getElementById("pageTitle"),
   installAppBtn: document.getElementById("installAppBtn"),
   toggleMainTabsBtn: document.getElementById("toggleMainTabsBtn"),
@@ -130,6 +136,8 @@ async function initSupabase() {
     clearCurrentPlaybackUi();
     state.user = null;
     state.accessToken = "";
+    state.accessApproved = false;
+    state.isAdmin = false;
     showAuth();
   });
 }
@@ -163,7 +171,7 @@ async function restoreSession() {
     showAuth();
     return;
   }
-  onAuthenticated(data.session);
+  await onAuthenticated(data.session);
 }
 
 function bindUiEvents() {
@@ -183,7 +191,7 @@ function bindUiEvents() {
       return;
     }
     setAuthStatus("");
-    onAuthenticated(data.session);
+    await onAuthenticated(data.session);
   });
 
   els.signupForm.addEventListener("submit", async (event) => {
@@ -210,7 +218,7 @@ function bindUiEvents() {
       return;
     }
     setAuthStatus("");
-    onAuthenticated(data.session);
+    await onAuthenticated(data.session);
   });
 
   els.logoutBtn.addEventListener("click", async () => {
@@ -224,6 +232,23 @@ function bindUiEvents() {
     state.accessToken = "";
     showAuth();
     setAuthMode("login");
+    setAuthStatus("Session fermee.");
+  });
+
+  els.pendingLogoutBtn?.addEventListener("click", async () => {
+    await releaseCurrentStream();
+    clearCurrentPlaybackUi();
+    if (supabaseClient) {
+      await supabaseClient.auth.signOut({ scope: "global" });
+    }
+    rotateStreamId();
+    state.user = null;
+    state.accessToken = "";
+    state.accessApproved = false;
+    state.isAdmin = false;
+    showAuth();
+    setAuthMode("login");
+    setPendingStatus("");
     setAuthStatus("Session fermee.");
   });
 
@@ -366,7 +391,12 @@ function setAuthStatus(text) {
   els.authStatus.textContent = text;
 }
 
-function onAuthenticated(session) {
+function setPendingStatus(text) {
+  if (!els.pendingStatus) return;
+  els.pendingStatus.textContent = text;
+}
+
+async function onAuthenticated(session) {
   if (!session?.user) return;
   state.user = session.user;
   state.accessToken = session.access_token || "";
@@ -377,6 +407,15 @@ function onAuthenticated(session) {
   els.userEmail.textContent = displayName;
   els.userEmail.title = displayName;
   els.settingsUserEmail.textContent = session.user.email || "-";
+
+  const access = await fetchAccessStatus();
+  if (!access?.approved) {
+    showPending(access);
+    return;
+  }
+
+  state.accessApproved = true;
+  state.isAdmin = Boolean(access.isAdmin);
   showApp();
   ensureAppLoaded();
 }
@@ -394,12 +433,42 @@ async function ensureAppLoaded() {
 
 function showAuth() {
   els.authView.classList.remove("hidden");
+  els.pendingView?.classList.add("hidden");
   els.appView.classList.add("hidden");
 }
 
 function showApp() {
   els.authView.classList.add("hidden");
+  els.pendingView?.classList.add("hidden");
   els.appView.classList.remove("hidden");
+}
+
+function showPending(access = {}) {
+  state.accessApproved = Boolean(access.approved);
+  state.isAdmin = Boolean(access.isAdmin);
+  els.authView.classList.add("hidden");
+  els.appView.classList.add("hidden");
+  els.pendingView?.classList.remove("hidden");
+  if (els.pendingMessage) {
+    els.pendingMessage.textContent = "Ton compte est en attente d'approbation par un administrateur.";
+  }
+}
+
+function getAuthHeaders(extraHeaders = {}) {
+  const headers = { ...extraHeaders };
+  if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
+  return headers;
+}
+
+async function fetchAccessStatus() {
+  const response = await fetch("/api/access/status", {
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    setAuthStatus("Impossible de verifier le statut d'approbation.");
+    return { approved: false, isAdmin: false };
+  }
+  return response.json();
 }
 
 function setMainTab(tab) {
@@ -468,7 +537,9 @@ function bindFullscreenTracking() {
 }
 
 async function loadGroups() {
-  const response = await fetch("/api/groups");
+  const response = await fetch("/api/groups", {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) throw new Error("Impossible de charger les categories");
 
   const payload = await response.json();
@@ -571,7 +642,9 @@ async function fetchChannelsPage(append = false) {
   if (els.loadLessBtn) els.loadLessBtn.disabled = true;
   els.listMeta.textContent = "Chargement des chaines...";
 
-  const response = await fetch(makeChannelsUrl());
+  const response = await fetch(makeChannelsUrl(), {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) throw new Error("Erreur chargement chaines");
 
   const payload = await response.json();

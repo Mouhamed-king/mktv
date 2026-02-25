@@ -244,6 +244,8 @@ Contact rapide : utilisez les issues du dépôt pour demandes ou priorités.
 5. Variables d'environnement Render:
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` (obligatoire pour le workflow d'approbation admin)
+   - `ADMIN_PANEL_PATH` (ex: `/mktv-admin-ops-7f9a`, URL secrete de la page admin)
 6. Deploy.
 
 Le fichier `render.yaml` est fourni et peut etre utilise directement.
@@ -268,6 +270,17 @@ Pour tester en local, cree un fichier `.env` a la racine en copiant `.env.exampl
 - `SUPABASE_ANON_KEY`
 
 Sur Render, configure ces variables dans l'interface (pas besoin de fichier `.env`).
+
+### Approbation admin (production)
+
+- La validation des comptes est persistante dans Supabase (table `public.user_access`).
+- Execute le SQL de creation dans l'editor SQL Supabase:
+  - `supabase/schema.sql`
+- Les admins sont hardcodes cote serveur:
+  - `mouhasogue@gmail.com`
+  - `methndiaye43@gmail.com`
+- La page admin est separee de l'app utilisateur, accessible via `ADMIN_PANEL_PATH` uniquement.
+- Exemple: `https://ton-app.onrender.com/mktv-admin-ops-7f9a`
 
 ### APK Android (telephone + box IPTV Android)
 
