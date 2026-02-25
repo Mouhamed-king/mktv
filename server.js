@@ -557,7 +557,8 @@ async function handleAccessPending(req, requestUrl, res) {
     return sendJson(res, 200, { pending: await getPendingEmails() });
   } catch (error) {
     console.error("pending access fetch failed", error);
-    return sendJson(res, 502, { error: "Pending users load failed" });
+    const reason = error && error.message ? error.message : String(error);
+    return sendJson(res, 502, { error: "Pending users load failed", reason });
   }
 }
 

@@ -121,11 +121,15 @@
       const response = await fetch("/api/access/pending", {
         headers: authHeaders(),
       });
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        els.adminStatus.textContent = "Impossible de charger les comptes en attente.";
+        if (payload.error || payload.reason) {
+          els.adminStatus.textContent = `Erreur: ${payload.error || "Pending users load failed"}${payload.reason ? ' - ' + payload.reason : ''}`;
+        } else {
+          els.adminStatus.textContent = "Impossible de charger les comptes en attente.";
+        }
         return;
       }
-      const payload = await response.json();
       renderPending(payload.pending || []);
       els.adminStatus.textContent = "";
     }
