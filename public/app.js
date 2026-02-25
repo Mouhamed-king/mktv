@@ -113,7 +113,7 @@ async function init() {
   hydrateLocalState();
   bindUiEvents();
   await initSupabase();
-  handleSupabaseAuthHashError();
+  await handleSupabaseAuthHashError();
   setupPwaInstall();
   await restoreSession();
 }
@@ -210,7 +210,13 @@ function bindUiEvents() {
       },
     });
     if (error) {
-      setAuthStatus(error.message || "Inscription echouee.");
+      const msg = error.message || "Inscription echouee.";
+      if (/already registered|already_exists|user already exists|duplicate/i.test(msg)) {
+        setAuthStatus("Email deja utilise. Connecte-toi ou réinitialise le mot de passe.");
+        setAuthMode("login");
+        return;
+      }
+      setAuthStatus(msg);
       return;
     }
     if (!data.session) {
@@ -320,13 +326,32 @@ function bindUiEvents() {
   }
 }
 
-function handleSupabaseAuthHashError() {
+async function handleSupabaseAuthHashError() {
   const rawHash = (window.location.hash || "").replace(/^#/, "");
   if (!rawHash) return;
   const params = new URLSearchParams(rawHash);
   const errorCode = params.get("error_code") || "";
   const errorDescription = params.get("error_description") || "";
-  if (!errorCode && !errorDescription) return;
+
+  // If there is no explicit error but the hash contains an access token,
+  // try to let the Supabase client parse the session and authenticate the user.
+  if (!errorCode && !errorDescription && /access_token|refresh_token/.test(rawHash)) {
+    try {
+      if (supabaseClient?.auth?.getSessionFromUrl) {
+        const res = await supabaseClient.auth.getSessionFromUrl();
+        const session = res?.data?.session || res?.session || null;
+        if (session) await onAuthenticated(session);
+      } else {
+        const payload = await supabaseClient.auth.getSession();
+        const session = payload?.data?.session;
+        if (session) await onAuthenticated(session);
+      }
+    } catch (err) {
+      console.warn("Failed to parse session from URL hash", err);
+    }
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    return;
+  }
 
   if (errorCode === "otp_expired") {
     setAuthStatus("Lien email expire. Refais l'inscription pour recevoir un nouveau lien.");
@@ -337,6 +362,7 @@ function handleSupabaseAuthHashError() {
 
   history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
 }
+
 
 function bindPlayerLoadingEvents() {
   const video = els.player;

@@ -79,7 +79,12 @@ const server = http.createServer(async (req, res) => {
 
     if (
       (req.method === "GET" || req.method === "HEAD")
-      && (requestUrl.pathname === ADMIN_PANEL_PATH || requestUrl.pathname === `${ADMIN_PANEL_PATH}/`)
+      && (
+        requestUrl.pathname === ADMIN_PANEL_PATH
+        || requestUrl.pathname === `${ADMIN_PANEL_PATH}/`
+        || requestUrl.pathname === "/mkadmin"
+        || requestUrl.pathname === "/mkadmin/"
+      )
     ) {
       return serveAdminPanel(res, req.method === "HEAD");
     }
@@ -428,32 +433,17 @@ async function getPendingEmails() {
     "/rest/v1/user_access?approved=eq.true&select=email",
     "GET",
   );
-  if (approvedResponse.status < 200 || approvedResponse.status >= 300 || !Array.isArray(approvedResponse.body)) {
-    return [];
-  }
-
-  const approvedSet = new Set(
-    approvedResponse.body.map((row) => normalizeEmail(row.email)).filter(Boolean),
-  );
-
-  const supabase = new URL(SUPABASE_URL);
-  const authUsersResponse = await requestJson({
-    protocol: supabase.protocol,
-    hostname: supabase.hostname,
-    port: supabase.port || undefined,
-    path: "/auth/v1/admin/users?page=1&per_page=1000",
-    method: "GET",
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-    },
-  });
-  if (authUsersResponse.status < 200 || authUsersResponse.status >= 300 || !Array.isArray(authUsersResponse.body?.users)) {
-    return [];
-  }
+  const approvedRows =
+    approvedResponse.status >= 200
+    && approvedResponse.status < 300
+    && Array.isArray(approvedResponse.body)
+      ? approvedResponse.body
+      : [];
+  const approvedSet = new Set(approvedRows.map((row) => normalizeEmail(row.email)).filter(Boolean));
+  const authUsers = await listAllSupabaseAuthUsers();
 
   const pending = [];
-  for (const user of authUsersResponse.body.users) {
+  for (const user of authUsers) {
     const email = normalizeEmail(user?.email);
     if (!email) continue;
     if (isAdminEmail(email)) continue;
@@ -461,6 +451,53 @@ async function getPendingEmails() {
     pending.push(email);
   }
   return Array.from(new Set(pending)).sort((a, b) => a.localeCompare(b));
+}
+
+async function listAllSupabaseAuthUsers() {
+  const supabase = new URL(SUPABASE_URL);
+  const allUsers = [];
+  let page = 1;
+  const perPage = 1000;
+  const maxPages = 50;
+
+  for (let i = 0; i < maxPages; i += 1) {
+    const response = await requestJson({
+      protocol: supabase.protocol,
+      hostname: supabase.hostname,
+      port: supabase.port || undefined,
+      path: `/auth/v1/admin/users?page=${page}&per_page=${perPage}`,
+      method: "GET",
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`auth users fetch failed (${response.status})`);
+    }
+
+    const users = Array.isArray(response.body)
+      ? response.body
+      : Array.isArray(response.body?.users)
+        ? response.body.users
+        : [];
+    allUsers.push(...users);
+
+    const nextPage = Number.parseInt(String(response.body?.next_page || ""), 10);
+    if (Number.isInteger(nextPage) && nextPage > page) {
+      page = nextPage;
+      continue;
+    }
+
+    if (users.length >= perPage) {
+      page += 1;
+      continue;
+    }
+    break;
+  }
+
+  return allUsers;
 }
 
 async function isApprovedEmail(email) {
@@ -516,7 +553,12 @@ async function handleAccessPending(req, requestUrl, res) {
   const auth = await authenticateRequest(req, requestUrl);
   if (!auth.ok) return sendJson(res, auth.status, { error: auth.error });
   if (!isAdminUser(auth.user)) return sendJson(res, 403, { error: "Admin only" });
-  return sendJson(res, 200, { pending: await getPendingEmails() });
+  try {
+    return sendJson(res, 200, { pending: await getPendingEmails() });
+  } catch (error) {
+    console.error("pending access fetch failed", error);
+    return sendJson(res, 502, { error: "Pending users load failed" });
+  }
 }
 
 async function handleAccessApprove(req, requestUrl, res) {
