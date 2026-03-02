@@ -10,12 +10,13 @@ const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const PRIVATE_DIR = path.join(ROOT_DIR, "private");
 const PLAYLIST_PATH = path.join(ROOT_DIR, "xtream_playlist.m3u");
-const UPSTREAM_TIMEOUT_MS = 5000;
+const UPSTREAM_TIMEOUT_MS = clampInt(process.env.UPSTREAM_TIMEOUT_MS, 20000, 5000, 120000);
 const STREAM_LOCK_TTL_MS = 15000;
 const MAX_CONCURRENT_STREAMS_PER_USER = 2;
 const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
 const ENFORCE_STREAM_LOCKS = false;
-const PROXY_HEADER_ATTEMPTS = 1;
+const PROXY_HEADER_ATTEMPTS = clampInt(process.env.PROXY_HEADER_ATTEMPTS, 2, 1, 3);
+const PROXY_REQUEST_RETRIES = clampInt(process.env.PROXY_REQUEST_RETRIES, 2, 0, 5);
 const ADMIN_EMAILS = new Set(["mouhasogue@gmail.com", "methndiaye43@gmail.com"].map((email) => email.toLowerCase()));
 const ADMIN_PANEL_PATH = normalizeAdminPanelPath(process.env.ADMIN_PANEL_PATH || "/mktv-admin-ops-7f9a");
 
@@ -799,6 +800,21 @@ async function requestWithRedirects(initialTarget, headers, signal, maxRedirects
   throw new Error("Too many redirects");
 }
 
+function shouldRetryUpstreamError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    message.includes("timeout")
+    || message.includes("socket hang up")
+    || message.includes("aborted")
+    || message.includes("econnreset")
+    || message.includes("econnrefused")
+    || message.includes("ehostunreach")
+    || message.includes("enotfound")
+    || message.includes("etimedout")
+    || message.includes("eai_again")
+  );
+}
+
 async function readStreamAsText(stream) {
   const chunks = [];
   return new Promise((resolve, reject) => {
@@ -875,14 +891,26 @@ async function handleProxyApi(req, res, requestUrl) {
     let resolvedTarget;
     let upstreamRes;
 
-    try {
-      const upstream = await requestWithRedirects(target, upstreamHeaders, controller.signal);
-      resolvedTarget = upstream.target;
-      upstreamRes = upstream.response;
-    } catch (error) {
-      if (controller.signal.aborted) return;
+    let lastError = null;
+    for (let retry = 0; retry <= PROXY_REQUEST_RETRIES; retry += 1) {
+      try {
+        const upstream = await requestWithRedirects(target, upstreamHeaders, controller.signal);
+        resolvedTarget = upstream.target;
+        upstreamRes = upstream.response;
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (controller.signal.aborted) return;
+        if (!shouldRetryUpstreamError(error) || retry >= PROXY_REQUEST_RETRIES) {
+          break;
+        }
+      }
+    }
+
+    if (lastError || !upstreamRes || !resolvedTarget) {
       if (attempt < headerVariants.length - 1) continue;
-      return sendJson(res, 502, { error: `Upstream request failed: ${error.message}` });
+      return sendJson(res, 502, { error: `Upstream request failed: ${lastError?.message || "Unknown error"}` });
     }
 
     const upstreamStatus = upstreamRes.statusCode || 502;
@@ -994,5 +1022,4 @@ function serveAdminPanel(res, headOnly) {
     return res.end(data);
   });
 }
-
 

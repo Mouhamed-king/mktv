@@ -29,6 +29,20 @@ body {
   color: var(--text);
 }
 
+button:focus-visible,
+input:focus-visible,
+.group-item:focus-visible,
+.main-tab:focus-visible,
+.channel-item:focus-visible,
+.load-btn:focus-visible,
+.player-fullscreen-btn:focus-visible,
+.install-btn:focus-visible,
+.action-btn:focus-visible {
+  outline: 2px solid #2ee6ff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(46, 230, 255, 0.25);
+}
+
 .mktv-logo-img {
   display: block;
   width: 100%;

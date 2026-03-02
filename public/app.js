@@ -79,9 +79,21 @@ let searchTimer = null;
 let playRequestId = 0;
 let networkRecoveryAttempts = 0;
 let lockRecoveryAttempts = 0;
+const MAX_NETWORK_RECOVERY_ATTEMPTS = 3;
+const STALL_DETECTION_MS = 12000;
+const STALL_CHECK_INTERVAL_MS = 4000;
+const STALL_RECOVERY_COOLDOWN_MS = 4000;
+const MAX_STALL_RECOVERY_ATTEMPTS = 5;
 let supabaseClient = null;
 let deferredInstallPrompt = null;
 let playerLoadingSafetyTimer = null;
+let lastPlaybackProgressAt = 0;
+let lastPlaybackTime = 0;
+let lastStallRecoveryAt = 0;
+let stallRecoveryAttempts = 0;
+let stallHardRestartDone = false;
+let playbackWatchdogTimer = null;
+let remoteNavigationPrimed = false;
 
 const FAST_LIVE_HLS_CONFIG = {
   enableWorker: true,
@@ -96,12 +108,14 @@ const FAST_LIVE_HLS_CONFIG = {
   maxLiveSyncPlaybackRate: 1.5,
   startFragPrefetch: true,
   testBandwidth: false,
-  manifestLoadingTimeOut: 5000,
-  manifestLoadingMaxRetry: 0,
-  levelLoadingTimeOut: 5000,
-  levelLoadingMaxRetry: 0,
-  fragLoadingTimeOut: 7000,
-  fragLoadingMaxRetry: 1,
+  manifestLoadingTimeOut: 15000,
+  manifestLoadingMaxRetry: 2,
+  levelLoadingTimeOut: 15000,
+  levelLoadingMaxRetry: 2,
+  fragLoadingTimeOut: 20000,
+  fragLoadingMaxRetry: 3,
+  fragLoadingRetryDelay: 1000,
+  fragLoadingMaxRetryTimeout: 10000,
 };
 
 init().catch((error) => {
@@ -319,6 +333,8 @@ function bindUiEvents() {
     releaseCurrentStream({ silent: true });
   });
 
+  document.addEventListener("keydown", handleRemoteKeydown);
+
   // On mobile, keep categories drawer closed by default.
   if (window.matchMedia?.("(max-width: 980px)").matches && els.groupsBlock) {
     els.groupsBlock.classList.remove("is-open");
@@ -368,6 +384,14 @@ function bindPlayerLoadingEvents() {
   const video = els.player;
   if (!video) return;
 
+  const markPlaybackProgress = () => {
+    if (!state.hasActivePlayback) return;
+    lastPlaybackProgressAt = Date.now();
+    lastPlaybackTime = Number(video.currentTime || 0);
+    stallRecoveryAttempts = 0;
+    stallHardRestartDone = false;
+  };
+
   video.addEventListener("loadstart", () => {
     if (!state.hasActivePlayback) return;
     setPlayerLoading(true);
@@ -377,8 +401,276 @@ function bindPlayerLoadingEvents() {
     setPlayerLoading(true);
   });
   video.addEventListener("canplay", () => setPlayerLoading(false));
-  video.addEventListener("playing", () => setPlayerLoading(false));
+  video.addEventListener("playing", () => {
+    setPlayerLoading(false);
+    markPlaybackProgress();
+  });
+  video.addEventListener("timeupdate", markPlaybackProgress);
+  video.addEventListener("progress", () => {
+    if (!state.hasActivePlayback) return;
+    lastPlaybackProgressAt = Date.now();
+  });
+  video.addEventListener("stalled", () => {
+    if (!state.hasActivePlayback) return;
+    attemptPlaybackRecovery("stalled");
+  });
   video.addEventListener("error", () => setPlayerLoading(false));
+}
+
+function startPlaybackWatchdog() {
+  stopPlaybackWatchdog();
+  lastPlaybackProgressAt = Date.now();
+  lastPlaybackTime = Number(els.player?.currentTime || 0);
+  playbackWatchdogTimer = setInterval(() => {
+    const video = els.player;
+    if (!video || !state.hasActivePlayback) return;
+    if (video.paused || video.seeking || video.ended) return;
+    if (video.readyState < 2) return;
+
+    const now = Date.now();
+    const currentTime = Number(video.currentTime || 0);
+    if (currentTime > lastPlaybackTime + 0.15) {
+      lastPlaybackTime = currentTime;
+      lastPlaybackProgressAt = now;
+      return;
+    }
+
+    if (now - lastPlaybackProgressAt >= STALL_DETECTION_MS) {
+      attemptPlaybackRecovery("watchdog");
+    }
+  }, STALL_CHECK_INTERVAL_MS);
+}
+
+function stopPlaybackWatchdog() {
+  if (!playbackWatchdogTimer) return;
+  clearInterval(playbackWatchdogTimer);
+  playbackWatchdogTimer = null;
+}
+
+function findSelectedChannel() {
+  const all = [...state.channels, ...state.favorites, ...state.recent];
+  return all.find((channel) => channel.url === state.selectedUrl) || null;
+}
+
+function attemptPlaybackRecovery(reason) {
+  const now = Date.now();
+  if (now - lastStallRecoveryAt < STALL_RECOVERY_COOLDOWN_MS) return;
+  lastStallRecoveryAt = now;
+
+  const video = els.player;
+  if (!video || !state.hasActivePlayback || !state.selectedUrl) return;
+
+  if (stallRecoveryAttempts >= MAX_STALL_RECOVERY_ATTEMPTS) {
+    if (!stallHardRestartDone) {
+      const selected = findSelectedChannel();
+      if (!selected) return;
+      stallHardRestartDone = true;
+      els.playerStatus.textContent = "Flux fige, relance complete du direct...";
+      playChannel(selected);
+      return;
+    }
+    els.playerStatus.textContent = "Flux instable, verification IPTV en cours...";
+    return;
+  }
+
+  stallRecoveryAttempts += 1;
+  els.playerStatus.textContent = `Recuperation du flux (${reason})... (${stallRecoveryAttempts}/${MAX_STALL_RECOVERY_ATTEMPTS})`;
+  setPlayerLoading(true);
+
+  if (hls) {
+    try {
+      hls.stopLoad();
+      hls.startLoad(-1);
+      hls.recoverMediaError();
+    } catch {}
+    video.play().catch(() => {});
+    return;
+  }
+
+  const source = video.currentSrc || video.src;
+  if (source) {
+    video.src = source;
+    video.load();
+  }
+  video.play().catch(() => {});
+}
+
+function normalizeRemoteKey(event) {
+  const key = String(event.key || "");
+  const keyCode = Number(event.keyCode || event.which || 0);
+  if (key === "ArrowUp" || keyCode === 38) return "up";
+  if (key === "ArrowDown" || keyCode === 40) return "down";
+  if (key === "ArrowLeft" || keyCode === 37) return "left";
+  if (key === "ArrowRight" || keyCode === 39) return "right";
+  if (key === "Enter" || key === "OK" || keyCode === 13) return "select";
+  if (key === "Escape" || key === "Backspace" || key === "GoBack" || key === "BrowserBack" || keyCode === 8 || keyCode === 27 || keyCode === 461 || keyCode === 10009) return "back";
+  if (key === "MediaPlayPause" || keyCode === 179) return "playpause";
+  return "";
+}
+
+function isVisibleFocusableElement(element) {
+  if (!element || !(element instanceof HTMLElement)) return false;
+  if (element.hidden || element.disabled) return false;
+  if (element.getAttribute("aria-hidden") === "true") return false;
+  const style = window.getComputedStyle(element);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  if (element.offsetParent === null && style.position !== "fixed") return false;
+  return true;
+}
+
+function getRemoteCandidates() {
+  return Array.from(document.querySelectorAll("button, input, [tabindex]:not([tabindex='-1'])"))
+    .filter(isVisibleFocusableElement);
+}
+
+function focusElementForRemote(element) {
+  if (!element) return false;
+  remoteNavigationPrimed = true;
+  element.focus({ preventScroll: true });
+  element.scrollIntoView({ block: "nearest", inline: "nearest" });
+  return true;
+}
+
+function getChannelCardByUrl(container, url) {
+  if (!container || !url) return null;
+  const cards = container.querySelectorAll(".channel-item");
+  for (const card of cards) {
+    if (card.dataset.url === url) return card;
+  }
+  return null;
+}
+
+function focusDefaultForActiveTab() {
+  if (state.activeTab === "settings" && focusElementForRemote(els.logoutBtn)) return;
+
+  const list = state.activeTab === "favorites"
+    ? els.favoritesList
+    : state.activeTab === "recent"
+      ? els.recentList
+      : els.channelsList;
+  const selectedCard = getChannelCardByUrl(list, state.selectedUrl || "");
+  if (selectedCard && focusElementForRemote(selectedCard)) return;
+  const firstCard = list?.querySelector(".channel-item");
+  if (firstCard && focusElementForRemote(firstCard)) return;
+  if (state.activeTab === "live" && focusElementForRemote(els.groupNav?.querySelector(".group-item.active"))) return;
+  if (state.activeTab === "live" && focusElementForRemote(els.groupNav?.querySelector(".group-item"))) return;
+  if (state.activeTab === "live" && focusElementForRemote(els.loadMoreBtn)) return;
+  if (state.activeTab === "live") focusElementForRemote(els.searchInput);
+}
+
+function moveRemoteFocus(direction) {
+  const candidates = getRemoteCandidates();
+  if (!candidates.length) return;
+
+  const current = document.activeElement;
+  if (!candidates.includes(current)) {
+    focusDefaultForActiveTab();
+    return;
+  }
+
+  const fromRect = current.getBoundingClientRect();
+  const fromX = fromRect.left + fromRect.width / 2;
+  const fromY = fromRect.top + fromRect.height / 2;
+
+  let best = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    if (candidate === current) continue;
+    const rect = candidate.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const dx = x - fromX;
+    const dy = y - fromY;
+
+    let valid = false;
+    let primary = 0;
+    let secondary = 0;
+    if (direction === "up" && dy < -4) {
+      valid = true;
+      primary = -dy;
+      secondary = Math.abs(dx);
+    } else if (direction === "down" && dy > 4) {
+      valid = true;
+      primary = dy;
+      secondary = Math.abs(dx);
+    } else if (direction === "left" && dx < -4) {
+      valid = true;
+      primary = -dx;
+      secondary = Math.abs(dy);
+    } else if (direction === "right" && dx > 4) {
+      valid = true;
+      primary = dx;
+      secondary = Math.abs(dy);
+    }
+    if (!valid) continue;
+
+    const score = primary * 1.2 + secondary * 0.6;
+    if (score < bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+
+  if (best) {
+    focusElementForRemote(best);
+  }
+}
+
+function handleRemoteKeydown(event) {
+  if (!state.accessApproved || els.appView.classList.contains("hidden")) return;
+  const remoteKey = normalizeRemoteKey(event);
+  if (!remoteKey) return;
+
+  const target = event.target;
+  const isTextInput = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+  if (isTextInput && !["left", "right", "up", "down", "back"].includes(remoteKey)) return;
+
+  if (remoteKey === "playpause") {
+    event.preventDefault();
+    if (els.player.paused) {
+      els.player.play().catch(() => {});
+    } else {
+      els.player.pause();
+    }
+    return;
+  }
+
+  if (remoteKey === "back") {
+    event.preventDefault();
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      return;
+    }
+    if (state.activeTab !== "live") {
+      setMainTab("live");
+      setTimeout(() => focusDefaultForActiveTab(), 0);
+      return;
+    }
+    if (els.groupsBlock?.classList.contains("is-open") && window.matchMedia?.("(max-width: 980px)").matches) {
+      els.groupsBlock.classList.remove("is-open");
+      els.groupsBlock.classList.add("is-collapsed");
+      return;
+    }
+    focusElementForRemote(els.searchInput);
+    return;
+  }
+
+  if (["up", "down", "left", "right"].includes(remoteKey)) {
+    event.preventDefault();
+    moveRemoteFocus(remoteKey);
+    return;
+  }
+
+  if (remoteKey === "select") {
+    event.preventDefault();
+    const active = document.activeElement;
+    if (!active || active === document.body) {
+      focusDefaultForActiveTab();
+      return;
+    }
+    if (active instanceof HTMLElement) active.click();
+  }
 }
 
 function setupPwaInstall() {
@@ -467,6 +759,9 @@ function showApp() {
   els.authView.classList.add("hidden");
   els.pendingView?.classList.add("hidden");
   els.appView.classList.remove("hidden");
+  if (remoteNavigationPrimed) {
+    setTimeout(() => focusDefaultForActiveTab(), 0);
+  }
 }
 
 function showPending(access = {}) {
@@ -527,6 +822,9 @@ function setMainTab(tab) {
 
   if (tab === "favorites") renderFavorites();
   if (tab === "recent") renderRecent();
+  if (remoteNavigationPrimed) {
+    setTimeout(() => focusDefaultForActiveTab(), 0);
+  }
 }
 
 function toggleAccordionPanel(panel) {
@@ -663,6 +961,14 @@ function makeProxyUrl(rawUrl) {
   return `/api/proxy?${params.toString()}`;
 }
 
+function buildLogoUrl(rawUrl) {
+  const value = String(rawUrl || "").trim();
+  if (!value) return CHANNEL_FALLBACK_THUMB;
+  if (value.startsWith("data:")) return value;
+  if (value.startsWith("http://")) return makeProxyUrl(value);
+  return value;
+}
+
 async function fetchChannelsPage(append = false) {
   els.loadMoreBtn.disabled = true;
   if (els.loadLessBtn) els.loadLessBtn.disabled = true;
@@ -691,14 +997,23 @@ function updateLoadButtons() {
 
 function renderLiveChannels() {
   renderChannelCollection(els.channelsList, state.channels, "Aucune chaine trouvee.");
+  if (remoteNavigationPrimed && state.activeTab === "live") {
+    setTimeout(() => focusDefaultForActiveTab(), 0);
+  }
 }
 
 function renderFavorites() {
   renderChannelCollection(els.favoritesList, state.favorites, "Aucun favori pour le moment.");
+  if (remoteNavigationPrimed && state.activeTab === "favorites") {
+    setTimeout(() => focusDefaultForActiveTab(), 0);
+  }
 }
 
 function renderRecent() {
   renderChannelCollection(els.recentList, state.recent, "Aucun historique pour le moment.");
+  if (remoteNavigationPrimed && state.activeTab === "recent") {
+    setTimeout(() => focusDefaultForActiveTab(), 0);
+  }
 }
 
 function renderChannelCollection(container, list, emptyText) {
@@ -723,13 +1038,14 @@ function createChannelCard(channel) {
   const item = document.createElement("button");
   item.className = `channel-item${channel.url === state.selectedUrl ? " active" : ""}`;
   item.type = "button";
+  item.dataset.url = channel.url;
 
   const image = document.createElement("img");
   image.className = "channel-logo";
   image.alt = channel.name;
   image.loading = "lazy";
   image.referrerPolicy = "no-referrer";
-  image.src = channel.logo || CHANNEL_FALLBACK_THUMB;
+  image.src = buildLogoUrl(channel.logo);
   image.addEventListener("error", () => {
     if (image.src.startsWith("data:image/svg+xml")) return;
     image.src = CHANNEL_FALLBACK_THUMB;
@@ -749,6 +1065,7 @@ function createChannelCard(channel) {
   const favBtn = document.createElement("button");
   favBtn.type = "button";
   favBtn.className = `fav-btn${isFavorite(channel.url) ? " active" : ""}`;
+  favBtn.tabIndex = -1;
   favBtn.textContent = "♥";
   favBtn.title = "Favori";
   favBtn.addEventListener("click", (event) => {
@@ -772,12 +1089,17 @@ function playChannel(channel) {
   const currentRequestId = playRequestId;
   networkRecoveryAttempts = 0;
   lockRecoveryAttempts = 0;
+  stallRecoveryAttempts = 0;
+  stallHardRestartDone = false;
+  lastPlaybackProgressAt = Date.now();
+  lastPlaybackTime = 0;
 
   state.selectedUrl = channel.url;
   state.hasActivePlayback = true;
   addToRecent(channel);
   renderLiveChannels();
   updatePlayerLayout(true);
+  startPlaybackWatchdog();
 
   const streamUrl = makeProxyUrl(channel.url);
   els.currentTitle.textContent = channel.name;
@@ -800,6 +1122,7 @@ function playChannel(channel) {
   if (!window.Hls || !window.Hls.isSupported()) {
     els.playerStatus.textContent = "Votre navigateur ne supporte pas HLS.";
     setPlayerLoading(false);
+    stopPlaybackWatchdog();
     return;
   }
 
@@ -860,17 +1183,14 @@ function playChannel(channel) {
         if (thisHls === hls) hls = null;
         return;
       }
-      if (networkRecoveryAttempts < 1) {
+      if (networkRecoveryAttempts < MAX_NETWORK_RECOVERY_ATTEMPTS) {
         networkRecoveryAttempts += 1;
-        els.playerStatus.textContent = "Resynchronisation reseau...";
+        els.playerStatus.textContent = `Resynchronisation reseau... (${networkRecoveryAttempts}/${MAX_NETWORK_RECOVERY_ATTEMPTS})`;
         thisHls.stopLoad();
         thisHls.startLoad(-1);
         return;
       }
-      els.playerStatus.textContent = "Flux indisponible apres plusieurs tentatives reseau.";
-      setPlayerLoading(false);
-      thisHls.destroy();
-      if (thisHls === hls) hls = null;
+      attemptPlaybackRecovery("hls-network");
       return;
     }
 
@@ -888,6 +1208,7 @@ function playChannel(channel) {
 }
 
 function teardownPlayer(video) {
+  stopPlaybackWatchdog();
   if (hls) {
     try {
       hls.stopLoad();
