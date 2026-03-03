@@ -953,11 +953,15 @@ function makeChannelsUrl() {
   return `/api/channels?${params.toString()}`;
 }
 
-function makeProxyUrl(rawUrl) {
+function makeProxyUrl(rawUrl, options = {}) {
+  const includeAuthToken = Boolean(options.includeAuthToken);
   const params = new URLSearchParams({
     url: rawUrl,
     sid: state.streamId,
   });
+  if (includeAuthToken && state.accessToken) {
+    params.set("at", state.accessToken);
+  }
   return `/api/proxy?${params.toString()}`;
 }
 
@@ -965,7 +969,14 @@ function buildLogoUrl(rawUrl) {
   const value = String(rawUrl || "").trim();
   if (!value) return CHANNEL_FALLBACK_THUMB;
   if (value.startsWith("data:")) return value;
-  if (value.startsWith("http://")) return makeProxyUrl(value);
+  try {
+    const resolved = new URL(value, window.location.origin);
+    const isAbsoluteHttp = resolved.protocol === "http:" || resolved.protocol === "https:";
+    if (isAbsoluteHttp) {
+      // Route all remote logos through backend to avoid mixed content and ensure access checks.
+      return makeProxyUrl(resolved.href, { includeAuthToken: true });
+    }
+  } catch {}
   return value;
 }
 

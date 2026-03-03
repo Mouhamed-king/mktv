@@ -815,6 +815,10 @@ function shouldRetryUpstreamError(error) {
   );
 }
 
+function shouldTryNextHeaderVariant(statusCode) {
+  return [401, 403, 405, 409, 429].includes(Number(statusCode) || 0);
+}
+
 async function readStreamAsText(stream) {
   const chunks = [];
   return new Promise((resolve, reject) => {
@@ -921,6 +925,11 @@ async function handleProxyApi(req, res, requestUrl) {
       contentType.includes("application/x-mpegurl");
 
     if (!isManifest) {
+      if (shouldTryNextHeaderVariant(upstreamStatus) && attempt < headerVariants.length - 1) {
+        upstreamRes.resume();
+        continue;
+      }
+
       res.statusCode = upstreamStatus;
       copyHeaderIfPresent(upstreamRes.headers, res, "content-type");
       copyHeaderIfPresent(upstreamRes.headers, res, "accept-ranges");
@@ -945,7 +954,7 @@ async function handleProxyApi(req, res, requestUrl) {
       return res.end(rewritten);
     }
 
-    const shouldRetry = ENFORCE_STREAM_LOCKS && [401, 403, 429].includes(upstreamStatus);
+    const shouldRetry = shouldTryNextHeaderVariant(upstreamStatus);
     if (shouldRetry && attempt < headerVariants.length - 1) {
       continue;
     }
@@ -1022,4 +1031,3 @@ function serveAdminPanel(res, headOnly) {
     return res.end(data);
   });
 }
-
