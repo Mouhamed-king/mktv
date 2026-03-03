@@ -1,4 +1,4 @@
-const CACHE_NAME = "mktv-shell-v2";
+const CACHE_NAME = "mktv-shell-v3";
 const ASSETS = [
   "/",
   "/index.html",
@@ -30,6 +30,20 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
   if (url.pathname.startsWith("/api/")) {
+    return;
+  }
+
+  const networkFirst = req.mode === "navigate" || ["/", "/index.html", "/app.js", "/styles.css"].includes(url.pathname);
+  if (networkFirst) {
+    event.respondWith(
+      fetch(req)
+        .then((response) => {
+          const cloned = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, cloned)).catch(() => {});
+          return response;
+        })
+        .catch(() => caches.match(req)),
+    );
     return;
   }
 

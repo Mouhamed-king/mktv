@@ -816,7 +816,7 @@ function shouldRetryUpstreamError(error) {
 }
 
 function shouldTryNextHeaderVariant(statusCode) {
-  return [401, 403, 405, 409, 429].includes(Number(statusCode) || 0);
+  return [401, 403, 405, 409, 429, 500, 502, 503, 504].includes(Number(statusCode) || 0);
 }
 
 async function readStreamAsText(stream) {
