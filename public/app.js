@@ -80,6 +80,10 @@ let playRequestId = 0;
 let networkRecoveryAttempts = 0;
 let lockRecoveryAttempts = 0;
 const MAX_NETWORK_RECOVERY_ATTEMPTS = 3;
+const TOKEN_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+const TOKEN_REFRESH_GRACE_MS = 5 * 60 * 1000;
+const AUTO_REJOIN_MIN_DELAY_MS = 1500;
+const AUTO_REJOIN_MAX_DELAY_MS = 15000;
 const STALL_DETECTION_MS = 12000;
 const STALL_CHECK_INTERVAL_MS = 4000;
 const STALL_RECOVERY_COOLDOWN_MS = 4000;
@@ -94,6 +98,10 @@ let stallRecoveryAttempts = 0;
 let stallHardRestartDone = false;
 let playbackWatchdogTimer = null;
 let remoteNavigationPrimed = false;
+let tokenRefreshTimer = null;
+let authRecoveryAttempts = 0;
+let autoRejoinTimer = null;
+let autoRejoinAttempts = 0;
 
 const FAST_LIVE_HLS_CONFIG = {
   enableWorker: true,
@@ -145,8 +153,10 @@ async function initSupabase() {
     if (session?.user) {
       state.user = session.user;
       state.accessToken = session.access_token || "";
+      startTokenRefreshLoop();
       return;
     }
+    stopTokenRefreshLoop();
     clearCurrentPlaybackUi();
     state.user = null;
     state.accessToken = "";
@@ -250,6 +260,7 @@ function bindUiEvents() {
     rotateStreamId();
     state.user = null;
     state.accessToken = "";
+    stopTokenRefreshLoop();
     showAuth();
     setAuthMode("login");
     setAuthStatus("Session fermee.");
@@ -264,6 +275,7 @@ function bindUiEvents() {
     rotateStreamId();
     state.user = null;
     state.accessToken = "";
+    stopTokenRefreshLoop();
     state.accessApproved = false;
     state.isAdmin = false;
     showAuth();
@@ -718,6 +730,7 @@ async function onAuthenticated(session) {
   if (!session?.user) return;
   state.user = session.user;
   state.accessToken = session.access_token || "";
+  startTokenRefreshLoop();
   const displayName =
     (session.user.user_metadata?.display_name || "").trim() ||
     (session.user.email || "").split("@")[0] ||
@@ -762,6 +775,45 @@ function showApp() {
   if (remoteNavigationPrimed) {
     setTimeout(() => focusDefaultForActiveTab(), 0);
   }
+}
+
+function startTokenRefreshLoop() {
+  stopTokenRefreshLoop();
+  tokenRefreshTimer = setInterval(() => {
+    refreshAccessToken({ silent: true }).catch(() => {});
+  }, TOKEN_REFRESH_INTERVAL_MS);
+}
+
+function stopTokenRefreshLoop() {
+  if (!tokenRefreshTimer) return;
+  clearInterval(tokenRefreshTimer);
+  tokenRefreshTimer = null;
+}
+
+async function refreshAccessToken(options = {}) {
+  const silent = Boolean(options.silent);
+  if (!supabaseClient) return false;
+
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error || !data.session) return false;
+
+  const session = data.session;
+  const expiresAtMs = Number(session.expires_at || 0) * 1000;
+  const shouldRefresh = !expiresAtMs || (expiresAtMs - Date.now()) <= TOKEN_REFRESH_GRACE_MS;
+  if (!shouldRefresh) {
+    state.accessToken = session.access_token || state.accessToken;
+    return Boolean(state.accessToken);
+  }
+
+  const refreshed = await supabaseClient.auth.refreshSession();
+  const refreshedSession = refreshed?.data?.session || null;
+  if (refreshed?.error || !refreshedSession) {
+    if (!silent) console.warn("token refresh failed", refreshed?.error || "missing session");
+    return false;
+  }
+
+  state.accessToken = refreshedSession.access_token || state.accessToken;
+  return Boolean(state.accessToken);
 }
 
 function showPending(access = {}) {
@@ -1096,10 +1148,12 @@ function createChannelCard(channel) {
 }
 
 function playChannel(channel) {
+  clearAutoRejoin();
   playRequestId += 1;
   const currentRequestId = playRequestId;
   networkRecoveryAttempts = 0;
   lockRecoveryAttempts = 0;
+  authRecoveryAttempts = 0;
   stallRecoveryAttempts = 0;
   stallHardRestartDone = false;
   lastPlaybackProgressAt = Date.now();
@@ -1124,9 +1178,14 @@ function playChannel(channel) {
     video.src = `${streamUrl}&at=${encodeURIComponent(state.accessToken)}`;
     video.play().then(() => {
       if (currentRequestId !== playRequestId) return;
+      clearAutoRejoin();
       els.playerStatus.textContent = `Lecture en cours (${channel.group})`;
       setPlayerLoading(false);
     }).catch(() => {});
+    video.onerror = () => {
+      if (currentRequestId !== playRequestId) return;
+      scheduleAutoRejoin(channel, "video-error");
+    };
     return;
   }
 
@@ -1162,6 +1221,7 @@ function playChannel(channel) {
     if (currentRequestId !== playRequestId || thisHls !== hls) return;
     video.play().then(() => {
       if (currentRequestId !== playRequestId || thisHls !== hls) return;
+      clearAutoRejoin();
       els.playerStatus.textContent = `Lecture en cours (${channel.group})`;
     }).catch(() => {});
   });
@@ -1173,6 +1233,24 @@ function playChannel(channel) {
     if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
       const statusCode = data?.response?.code || 0;
       if ([401, 403, 405, 409, 429].includes(statusCode)) {
+        if (statusCode === 401 && authRecoveryAttempts < 1) {
+          authRecoveryAttempts += 1;
+          els.playerStatus.textContent = "Session expiree, reconnexion automatique...";
+          refreshAccessToken({ silent: false })
+            .then((ok) => {
+              if (currentRequestId !== playRequestId || thisHls !== hls) return;
+              if (!ok) {
+                scheduleAutoRejoin(channel, "token-refresh-failed");
+                return;
+              }
+              playChannel(channel);
+            })
+            .catch(() => {
+              if (currentRequestId !== playRequestId || thisHls !== hls) return;
+              scheduleAutoRejoin(channel, "token-refresh-error");
+            });
+          return;
+        }
         if (statusCode === 409 && lockRecoveryAttempts < 1) {
           lockRecoveryAttempts += 1;
           els.playerStatus.textContent = "Session IPTV en conflit, tentative de recuperation...";
@@ -1188,10 +1266,8 @@ function playChannel(channel) {
           : statusCode === 409
             ? "Un autre appareil utilise deja ce compte en lecture."
           : "Chaine non autorisee ou bloquee par le fournisseur IPTV.";
-        els.playerStatus.textContent = `${reason} (code ${statusCode}).`;
-        setPlayerLoading(false);
-        thisHls.destroy();
-        if (thisHls === hls) hls = null;
+        els.playerStatus.textContent = `${reason} Nouvelle tentative... (code ${statusCode})`;
+        scheduleAutoRejoin(channel, `status-${statusCode}`);
         return;
       }
       if (networkRecoveryAttempts < MAX_NETWORK_RECOVERY_ATTEMPTS) {
@@ -1212,14 +1288,47 @@ function playChannel(channel) {
     }
 
     els.playerStatus.textContent = `Erreur HLS: ${data.details || data.type || "fatal"}`;
-    setPlayerLoading(false);
-    thisHls.destroy();
-    if (thisHls === hls) hls = null;
+    scheduleAutoRejoin(channel, "hls-fatal");
   });
+}
+
+function computeAutoRejoinDelayMs() {
+  const attempt = Math.max(1, autoRejoinAttempts);
+  const exponential = AUTO_REJOIN_MIN_DELAY_MS * Math.pow(1.8, attempt - 1);
+  const withJitter = exponential + Math.floor(Math.random() * 400);
+  return Math.min(AUTO_REJOIN_MAX_DELAY_MS, Math.max(AUTO_REJOIN_MIN_DELAY_MS, withJitter));
+}
+
+function clearAutoRejoin() {
+  autoRejoinAttempts = 0;
+  if (!autoRejoinTimer) return;
+  clearTimeout(autoRejoinTimer);
+  autoRejoinTimer = null;
+}
+
+function scheduleAutoRejoin(channel, reason = "unknown") {
+  if (!channel?.url) return;
+  if (!state.hasActivePlayback || state.selectedUrl !== channel.url) return;
+  if (autoRejoinTimer) return;
+
+  autoRejoinAttempts += 1;
+  const delayMs = computeAutoRejoinDelayMs();
+  els.playerStatus.textContent = `Flux interrompu (${reason}). Reconnexion dans ${Math.ceil(delayMs / 1000)}s...`;
+  setPlayerLoading(true);
+
+  autoRejoinTimer = setTimeout(() => {
+    autoRejoinTimer = null;
+    if (!state.hasActivePlayback || state.selectedUrl !== channel.url) return;
+    playChannel(channel);
+  }, delayMs);
 }
 
 function teardownPlayer(video) {
   stopPlaybackWatchdog();
+  if (autoRejoinTimer) {
+    clearTimeout(autoRejoinTimer);
+    autoRejoinTimer = null;
+  }
   if (hls) {
     try {
       hls.stopLoad();
